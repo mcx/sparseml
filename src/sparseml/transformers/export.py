@@ -135,6 +135,13 @@ def load_task_model(task: str, model_path: str, config: Any) -> Module:
             model_type="model",
         )
 
+    if task == "text-generation":
+        return SparseAutoModel.token_classification_from_pretrained(
+            model_name_or_path=model_path,
+            config=config,
+            model_type="model",
+        )
+    
     raise ValueError(f"unrecognized task given of {task}")
 
 
@@ -239,11 +246,11 @@ def export_transformer_to_onnx(
     """
     task = task.replace("_", "-").replace(" ", "-")
 
-    if not os.path.exists(model_path) or not os.path.isdir(model_path):
-        raise ValueError(
-            "model_path must be a directory that contains the trained transformer "
-            f"files. {model_path} is not a directory or does not exist"
-        )
+    # if not os.path.exists(model_path) or not os.path.isdir(model_path):
+    #     raise ValueError(
+    #         "model_path must be a directory that contains the trained transformer "
+    #         f"files. {model_path} is not a directory or does not exist"
+    #     )
 
     if num_export_samples > 0 and data_args is None:
         _LOGGER.info(
@@ -259,10 +266,17 @@ def export_transformer_to_onnx(
         model_path,
         **config_args,
     )
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_path, model_max_length=sequence_length
     )
-    model = load_task_model(task, model_path, config)
+
+    if task == "nlg":
+        from transformers import OPTForCausalLM
+        model = OPTForCausalLM.from_pretrained(model_path)
+    else:
+        model = load_task_model(task, model_path, config)
+
     _LOGGER.info(f"loaded model, config, and tokenizer from {model_path}")
 
     eval_dataset = None
@@ -532,13 +546,18 @@ def export(
         one_shot=one_shot,
     )
 
-    deployment_folder_dir = create_deployment_folder(
-        training_directory=model_path, onnx_file_name=onnx_file_name
-    )
-    _LOGGER.info(
-        f"Created deployment folder at {deployment_folder_dir} "
-        f"with files: {os.listdir(deployment_folder_dir)}"
-    )
+    if task != 'nlg':
+        deployment_folder_dir = create_deployment_folder(
+            training_directory=model_path, onnx_file_name=onnx_file_name
+        )
+        _LOGGER.info(
+            f"Created deployment folder at {deployment_folder_dir} "
+            f"with files: {os.listdir(deployment_folder_dir)}"
+        )
+    else:
+        # For OPT model we don't have tokenizer.json, skip deployment folder
+        # for now
+        pass
 
 
 def main():
