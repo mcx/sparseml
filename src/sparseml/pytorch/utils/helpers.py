@@ -66,6 +66,7 @@ except Exception as _err:
 
 __all__ = [
     "default_device",
+    "detach",
     "device_of",
     "get_optim_learning_rate",
     "get_optim_groups_learning_rates",
@@ -1162,3 +1163,14 @@ def download_framework_model_by_recipe_type(
         framework_model = zoo_model.training.default.get_file(model_name)
 
     return framework_model.path
+
+
+def detach(x: Union[torch.Tensor, List, Tuple]):
+    if isinstance(s, torch.Tensor):
+        return x.detach()
+    elif isinstance(x, List):
+        return [detach(e) for e in x]
+    elif isinstance(x, typing.Tuple):
+        return tuple([detach(e) for e in x])
+    else:
+        raise ValueError("Unexpected type to detach")
