@@ -24,7 +24,8 @@ Further info on ResNext can be found in the paper
 
 from typing import List
 
-from torch import Tensor
+import numpy
+from torch import Tensor, tensor
 from torch.nn import (
     AdaptiveAvgPool2d,
     BatchNorm2d,
@@ -35,6 +36,7 @@ from torch.nn import (
     Sequential,
     Sigmoid,
     Softmax,
+    functional,
     init,
 )
 
@@ -80,6 +82,36 @@ def _init_batch_norm(norm: BatchNorm2d, weight_const: float = 1.0):
 def _init_linear(linear: Linear):
     init.normal_(linear.weight, 0, 0.01)
     init.constant_(linear.bias, 0)
+
+
+class BlurPoolConv2d(Module):
+    def __init__(self, conv):
+        super().__init__()
+        default_filter = tensor([[[[1, 2, 1], [2, 4, 2], [1, 2, 1]]]]) / 16.0
+        filt = default_filter.repeat(conv.in_channels, 1, 1, 1)
+        self.conv = conv
+        self.register_buffer("blur_filter", filt)
+
+    def forward(self, x):
+        blurred = functional.conv2d(
+            x,
+            self.blur_filter,
+            stride=1,
+            padding=(1, 1),
+            groups=self.conv.in_channels,
+            bias=None,
+        )
+        return self.conv.forward(blurred)
+
+
+def apply_blurpool(mod: Module):
+    for (name, child) in mod.named_children():
+        if isinstance(child, Conv2d) and (
+            numpy.max(child.stride) > 1 and child.in_channels >= 16
+        ):
+            setattr(mod, name, BlurPoolConv2d(child))
+        else:
+            apply_blurpool(child)
 
 
 class _Input(Module):
@@ -735,7 +767,9 @@ def resnetv2_34(num_classes: int = 1000, class_type: str = "single") -> ResNet:
     default_desc="base",
     def_ignore_error_tensors=["classifier.fc.weight", "classifier.fc.bias"],
 )
-def resnet50(num_classes: int = 1000, class_type: str = "single") -> ResNet:
+def resnet50(
+    num_classes: int = 1000, class_type: str = "single", use_blurpool: bool = False
+) -> ResNet:
     """
     Standard ResNet 50 implementation;
     expected input shape is (B, 3, 224, 224)
@@ -776,9 +810,12 @@ def resnet50(num_classes: int = 1000, class_type: str = "single") -> ResNet:
         ),
     ]
 
-    return ResNet(
+    model = ResNet(
         sec_settings=sec_settings, num_classes=num_classes, class_type=class_type
     )
+    if use_blurpool:
+        apply_blurpool(model)
+    return model
 
 
 @ModelRegistry.register(
