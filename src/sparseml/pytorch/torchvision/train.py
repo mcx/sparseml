@@ -21,6 +21,7 @@ import os
 import sys
 import time
 import warnings
+import json
 from functools import update_wrapper
 from types import SimpleNamespace
 from typing import Callable, Optional
@@ -394,6 +395,7 @@ def main(args):
         pretrained_dataset=args.pretrained_dataset,
         device=device,
         num_classes=num_classes,
+        model_kwargs=args.model_kwargs,
     )
 
     if args.distill_teacher not in ["self", "disable", None]:
@@ -747,15 +749,21 @@ def _create_model(
     pretrained_dataset: Optional[str] = None,
     device=None,
     num_classes=None,
+    model_kwargs=None,
 ):
     if not arch_key or arch_key in ModelRegistry.available_keys():
         with torch_distributed_zero_first(local_rank):
+            if model_kwargs is None:
+                model_kwargs = {}
+            elif isinstance(model_kwargs, str):
+                model_kwargs = json.loads(model_kwargs)
             model = ModelRegistry.create(
                 key=arch_key,
                 pretrained=pretrained,
                 pretrained_path=checkpoint_path,
                 pretrained_dataset=pretrained_dataset,
                 num_classes=num_classes,
+                **model_kwargs,
             )
 
         if isinstance(model, tuple):
@@ -1210,6 +1218,14 @@ def _deprecate_old_arguments(f):
         "The architecture key for teacher image classification model; "
         "example: `resnet50`, `mobilenet`. "
         "Note: Will be read from the checkpoint if not specified"
+    ),
+)
+@click.option(
+    "--model-kwargs",
+    default=None,
+    type=str,
+    help=(
+        "Optional arguments for model creation."
     ),
 )
 @click.pass_context
