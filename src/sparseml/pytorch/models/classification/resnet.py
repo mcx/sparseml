@@ -90,6 +90,7 @@ class BlurPoolConv2d(Module):
         default_filter = tensor([[[[1, 2, 1], [2, 4, 2], [1, 2, 1]]]]) / 16.0
         filt = default_filter.repeat(conv.in_channels, 1, 1, 1)
         self.conv = conv
+        self.in_channels = self.conv.in_channels
         self.register_buffer("blur_filter", filt)
 
     def forward(self, x):
@@ -98,7 +99,7 @@ class BlurPoolConv2d(Module):
             self.blur_filter,
             stride=1,
             padding=(1, 1),
-            groups=self.conv.in_channels,
+            groups=self.in_channels,
             bias=None,
         )
         return self.conv.forward(blurred)
@@ -117,6 +118,7 @@ def apply_blurpool(mod: Module):
 class _Input(Module):
     IN_CHANNELS = 3
     OUT_CHANNELS = 64
+
 
     def __init__(self):
         super().__init__()

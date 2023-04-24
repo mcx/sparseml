@@ -763,6 +763,7 @@ def _create_model(
                 pretrained_path=checkpoint_path,
                 pretrained_dataset=pretrained_dataset,
                 num_classes=num_classes,
+                load_strict=False,
                 **model_kwargs,
             )
 
