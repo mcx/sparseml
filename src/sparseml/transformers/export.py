@@ -271,9 +271,21 @@ def export_transformer_to_onnx(
         model_path, model_max_length=sequence_length
     )
 
-    if task == "nlg":
+    if task == "nlg-opt":
         from transformers import OPTForCausalLM
         model = OPTForCausalLM.from_pretrained(model_path)
+    elif task == "nlg-bloom":
+        from transformers import BloomForCausalLM
+
+        # Switch this flag to load bloom with fp16 embedding, which requires
+        # some change to exporter.py to move both the model and input sample
+        # to CUDA, because fp16 can't be executed on CPU
+        bloom_fp16 = False
+        if bloom_fp16:
+            model = BloomForCausalLM.from_pretrained(model_path, torch_dtype="auto")
+        else:
+            # Load model with fp32
+            model = BloomForCausalLM.from_pretrained(model_path)
     else:
         model = load_task_model(task, model_path, config)
 
@@ -323,41 +335,67 @@ def export_transformer_to_onnx(
         )
         _LOGGER.info(f"Applied {msg} to the model at {model_path}")
 
-    # create fake model input
-    inputs = tokenizer(
-        "", return_tensors="pt", padding=PaddingStrategy.MAX_LENGTH.value
-    ).data  # Dict[Tensor]
+    from transformers import BloomForCausalLM    
+    if isinstance(model, BloomForCausalLM):
+        # Bypass an error when running default flow of generating
+        # input sample
+        from datasets import load_dataset
+        traindata = load_dataset(
+            "allenai/c4",
+            "allenai--c4",
+            data_files={"train": "en/c4-train.00000-of-01024.json.gz"},
+            split="train",
+        )
+        import random
+        seqlen = 2048
+        while True:
+            i = random.randint(0, len(traindata) - 1)
+            trainenc = tokenizer(traindata[i]["text"], return_tensors="pt")
+            if trainenc.input_ids.shape[1] >= seqlen:
+                break
+        i = random.randint(0, trainenc.input_ids.shape[1] - seqlen - 1)
+        j = i + seqlen
+        inp = trainenc.input_ids[:, i:j]
+        inp.to('cuda')
+        tar = inp.clone()
+        tar[:, :-1] = -100
+        inputs = [inp]
+    else:
+        # create fake model input
+        inputs = tokenizer(
+            "", return_tensors="pt", padding=PaddingStrategy.MAX_LENGTH.value
+        ).data  # Dict[Tensor]
 
-    # Rearrange inputs' keys to match those defined by model foward func, which
-    # seem to define how the order of inputs is determined in the exported model
-    forward_args_spec = inspect.getfullargspec(model.__class__.forward)
-    dropped = [
-        input_key
-        for input_key in inputs.keys()
-        if input_key not in forward_args_spec.args
-    ]
-    inputs = collections.OrderedDict(
-        [
-            (func_input_arg_name, inputs[func_input_arg_name][0].reshape(1, -1))
-            for func_input_arg_name in forward_args_spec.args
-            if func_input_arg_name in inputs
+        # Rearrange inputs' keys to match those defined by model foward func, which
+        # seem to define how the order of inputs is determined in the exported model
+        forward_args_spec = inspect.getfullargspec(model.__class__.forward)
+        dropped = [
+            input_key
+            for input_key in inputs.keys()
+            if input_key not in forward_args_spec.args
         ]
-    )
-    if dropped:
-        _LOGGER.warning(
-            "The following inputs were not present in the model forward function "
-            f"and therefore dropped from ONNX export: {dropped}"
+        inputs = collections.OrderedDict(
+            [
+                (func_input_arg_name, inputs[func_input_arg_name][0].reshape(1, -1))
+                for func_input_arg_name in forward_args_spec.args
+                if func_input_arg_name in inputs
+            ]
         )
+        if dropped:
+            _LOGGER.warning(
+                "The following inputs were not present in the model forward function "
+                f"and therefore dropped from ONNX export: {dropped}"
+            )
 
-    inputs_shapes = {
-        key: (
-            f"{val.dtype if hasattr(val, 'dtype') else 'unknown'}: "
-            f"{list(val.shape) if hasattr(val, 'shape') else 'unknown'}"
-        )
-        for key, val in inputs.items()
-    }
+        inputs_shapes = {
+            key: (
+                f"{val.dtype if hasattr(val, 'dtype') else 'unknown'}: "
+                f"{list(val.shape) if hasattr(val, 'shape') else 'unknown'}"
+            )
+            for key, val in inputs.items()
+        }
 
-    _LOGGER.info(f"Created sample inputs for the ONNX export process: {inputs_shapes}")
+        _LOGGER.info(f"Created sample inputs for the ONNX export process: {inputs_shapes}")
 
     if one_shot:
         one_shot_manager = ScheduledModifierManager.from_yaml(file_path=one_shot)
@@ -376,7 +414,6 @@ def export_transformer_to_onnx(
     _LOGGER.info(f"ONNX exported to {onnx_file_path}")
 
     # export sample inputs/outputs
-
     if num_export_samples > 0:
         _LOGGER.info(f"Exporting {num_export_samples} sample inputs/outputs")
         trainer.save_sample_inputs_outputs(
@@ -546,7 +583,7 @@ def export(
         one_shot=one_shot,
     )
 
-    if task != 'nlg':
+    if task != 'nlg-opt':
         deployment_folder_dir = create_deployment_folder(
             training_directory=model_path, onnx_file_name=onnx_file_name
         )
