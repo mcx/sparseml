@@ -8,8 +8,8 @@ from transformers import AutoTokenizer
 import onnxruntime as rt
 import numpy as np
 
-DEBUG_NODE = "onnx::Gather_392"
-DEBUG_NODE_BASELINE = "onnx::Gather_459"
+DEBUG_NODE = "/transformer/h.1/attn/Gather_15_output_0"
+DEBUG_NODE_BASELINE = "/transformer/h.1/attn/Gather_15_output_0"
 
 
 def add_debug_node(model_path: str, new_model_path: str, intermediate_tensor_name:str):
@@ -21,8 +21,7 @@ def add_debug_node(model_path: str, new_model_path: str, intermediate_tensor_nam
     debug = onnx.helper.make_tensor_value_info(
         intermediate_tensor_name,
         onnx.TensorProto.INT64,
-        # hacky
-        shape= [None, None, None, None],
+        shape= [],
     )
     model.graph.output.extend([debug])
     onnx.save(model, new_model_path)
@@ -41,10 +40,10 @@ To obtain the `deployment/model.onnx run transformers export with the following 
 git clone https://huggingface.co/Salesforce/codegen-350M-multi
 )
 """
-onnx_model = onnx.load("deployment/model.onnx")
-onnx_model = AddKeyValueCache().transform(onnx_model)
-onnx.checker.check_model(onnx_model)
-onnx.save(onnx_model, "small_codegen.onnx", save_as_external_data=True, all_tensors_to_one_file=True)
+# onnx_model = onnx.load("/network/damian/for_sage/working_codegen-350M-multi/model.onnx")
+# onnx_model = AddKeyValueCache().transform(onnx_model)
+# onnx.checker.check_model(onnx_model)
+# onnx.save(onnx_model, "small_codegen.onnx", save_as_external_data=True, all_tensors_to_one_file=True)
 
 #### RUN ONNX MODEL ####
 # Setup the tested model
@@ -61,7 +60,7 @@ output_names = [out.name for out in onnx.load(model_path_debug).graph.output]
 To obtain the `decoder_with_past_model.onnx` run optimum export:
 optimum-cli export onnx --model Salesforce/codegen-350M-multi codegen-350M-multi
 """
-baseline_model_path = "/home/ubuntu/damian/deepsparse/codegen-350M-multi/decoder_with_past_model.onnx"
+baseline_model_path = "/network/damian/for_sage/working_codegen-350M-multi/model.onnx"
 baseline_model_path_debug = "debug.onnx"
 add_debug_node(baseline_model_path, baseline_model_path_debug, DEBUG_NODE_BASELINE)
 sess_baseline = rt.InferenceSession(baseline_model_path_debug)
@@ -80,14 +79,13 @@ num_heads = 16
 past_length = 0
 seq_length = 1
 
-
 # Setup the cache (tested and baseline)
 kv_cache = defaultdict(np.ndarray)
 kv_cache_baseline = defaultdict(np.ndarray)
 
 for i in range(20):
     kv_cache[f"past_key_values.{i}.value"] = np.zeros((batch_size, num_heads, past_length, head_dim)).astype(np.float32)
-    kv_cache[f"past_key_values.{i}.key"] = np.zeros((batch_size, num_heads, head_dim, past_length)).astype(np.float32)
+    kv_cache[f"past_key_values.{i}.key"] = np.zeros((batch_size, num_heads,past_length, head_dim)).astype(np.float32)
 
     kv_cache_baseline[f"past_key_values.{i}.value"] = np.zeros((batch_size, num_heads, past_length, head_dim)).astype(np.float32)
     kv_cache_baseline[f"past_key_values.{i}.key"] = np.zeros((batch_size, num_heads, past_length, head_dim)).astype(np.float32)
@@ -98,23 +96,26 @@ for i, token in enumerate(input_ids[0]):
     input_ids = np.array([[token]])
 
     # Inference tested model
-    out = sess.run(None, {"input_ids": input_ids,"attention_mask": attention_mask, **kv_cache})
-    *kv_cache, logits, debug_node = out
-    new_kv_cache = {k.replace("present",  "past_key_values"): v for k, v in zip(output_names[:-1], kv_cache)}
+    out = sess.run(None, {"input_ids": input_ids,
+                          "attention_mask": attention_mask,
+                          "cache_length": np.array(past_length, dtype=np.int64),
+                          **kv_cache})
+    logits, *kv_cache, debug_node = out
+    new_kv_cache = {k.replace("present",  "past_key_values"): v for k, v in zip(output_names[1:-1], kv_cache)}
 
     # Inference baseline model
     out_baseline = sess_baseline.run(None, {"input_ids": input_ids,
                                             "attention_mask": attention_mask,
                                             **kv_cache_baseline})
     logits_baseline, *kv_cache_baseline, debug_node_baseline = out_baseline
-    new_kv_cache_baseline = {k.replace("present", "past_key_values"): v for k, v in zip(output_names_baseline[1:], kv_cache_baseline)}
+    new_kv_cache_baseline = {k.replace("present", "past_key_values"): v for k, v in zip(output_names_baseline[1:-1], kv_cache_baseline)}
 
     matched_keys = 0
     matched_values = 0
     for k,v in new_kv_cache_baseline.items():
         if k in new_kv_cache:
             if k.endswith("key"):
-                if np.allclose(v.transpose(0,1,3,2), new_kv_cache[k], atol=1e-3):
+                if np.allclose(v, new_kv_cache[k], atol=1e-3):
                     matched_keys +=1
             else:
                 if np.allclose(v, new_kv_cache[k], atol=1e-3):
