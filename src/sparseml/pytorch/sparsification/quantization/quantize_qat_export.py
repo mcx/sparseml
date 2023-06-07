@@ -667,30 +667,32 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs(model: ModelProto):
         if bias_add_node is not None and bias_add_node.op_type == "Add":
             bias_initializer = get_init_by_name(model, bias_add_node.input[1]) or get_init_by_name(model, bias_add_node.input[0])
             if bias_initializer is not None:
-                has_bias = True
-
-                # Create initializer for quantized bias
-                quantized_bias_initializer_name = f"{bias_initializer.name}_quant"
+                #check if bias is finite
                 bias_initializer = numpy_helper.to_array(bias_initializer)
-                bias_zero_point = 0
-                quantized_bias = _quantize_array(
-                    bias_initializer, output_scale, bias_zero_point, dtype=numpy.int32
-                )
-                quantized_bias_initializer = numpy_helper.from_array(
-                    quantized_bias,
-                    name=quantized_bias_initializer_name,
-                )
-                model.graph.initializer.append(quantized_bias_initializer)
+                if numpy.all(numpy.isfinite(bias_initializer)):
+                    # Create initializer for quantized bias
+                    quantized_bias_initializer_name = f"{bias_initializer.name}_quant"
+                    has_bias = True
 
-                # Create new Add node for quantized bias
-                quantized_add_node_name = f"{bias_add_node.name}_quant"
-                quantized_add_node = onnx.helper.make_node(
-                    "Add",
-                    [matmul_int_op_node.output[0], quantized_bias_initializer_name],
-                    [f"{quantized_add_node_name}_output"],
-                    quantized_add_node_name,
-                )
-                model.graph.node.append(quantized_add_node)
+                    bias_zero_point = 0
+                    quantized_bias = _quantize_array(
+                        bias_initializer, output_scale, bias_zero_point, dtype=numpy.int32
+                    )
+                    quantized_bias_initializer = numpy_helper.from_array(
+                        quantized_bias,
+                        name=quantized_bias_initializer_name,
+                    )
+                    model.graph.initializer.append(quantized_bias_initializer)
+
+                    # Create new Add node for quantized bias
+                    quantized_add_node_name = f"{bias_add_node.name}_quant"
+                    quantized_add_node = onnx.helper.make_node(
+                        "Add",
+                        [matmul_int_op_node.output[0], quantized_bias_initializer_name],
+                        [f"{quantized_add_node_name}_output"],
+                        quantized_add_node_name,
+                    )
+                    model.graph.node.append(quantized_add_node)
 
         # Casting MatMulInteger INT32 output to FP32
 
