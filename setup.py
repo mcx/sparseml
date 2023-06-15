@@ -123,6 +123,7 @@ _dev_deps = [
 
 _ultralytics_deps = [
     "ultralytics==8.0.30",
+    "jsonschema[format]==4.17.3",
     supported_torch_version,
 ]
 
