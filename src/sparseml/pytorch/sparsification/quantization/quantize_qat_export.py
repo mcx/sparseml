@@ -1206,13 +1206,15 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
     | Starting with:
     |          INPUT         QuantizeLinear (with constant kernel)
     |            |               |
+    |            |            Transpose
+    |            |               |
     |     QuantizeLinear     DequantizeLinear
     |            |               |
     |     DequantizeLinear   Transpose
     |                  |      |
     |                   MatMul
     |                     |
-    |                    Add (with constant bias)
+    |                    Add (with constant bias, optional)
     |                     |
     |               QuantizeLinear (Optional)
     |                     |
@@ -1226,7 +1228,7 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
     |         |
     |     MatMulInteger (with constant uint8 kernel)
     |         |
-    |     Add (constant bias + zero point correction)
+    |     Add (constant bias + zero point correction, optional)
     |         |
     |     Cast (INT32 -> FP32)
     |         |
@@ -1263,8 +1265,12 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
             continue
 
         bias_add_node = graph.get_node_single_child(matmul_node)
-        if not bias_add_node or bias_add_node.op_type != "Add":
-            continue
+        if bias_add_node and bias_add_node.op_type == "Add":
+            bias_initializer = get_init_by_name(model, bias_add_node.input[1]) or (
+                get_init_by_name(model, bias_add_node.input[0])
+            )
+        else:
+            bias_initializer = None
 
         output_quantize_node = None
         output_dequantize_node = None
@@ -1282,15 +1288,20 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
             continue
         if output_quantize_node and output_quantize_node.op_type != "QuantizeLinear":
             continue
-        bias_initializer = get_init_by_name(model, bias_add_node.input[1]) or (
-            get_init_by_name(model, bias_add_node.input[0])
-        )
-        if bias_initializer is None:
-            continue
 
-        _LOGGER.debug(f"Matched quantizable MatMul weight and bias: {matmul_node.name}")
+        if bias_initializer is None:
+            _LOGGER.debug(f"Matched quantizable MatMul weight: {matmul_node.name}")
+        else:
+            _LOGGER.debug(f"Matched quantizable MatMul weight and bias: {matmul_node.name}")
 
         # Conversion
+        if output_dequantize_node:
+            target_output = output_dequantize_node.output[0]
+        elif bias_initializer is not None:
+            target_output = bias_add_node.output[0]
+        else:
+            target_output = matmul_node.output[0]
+
         _add_quantized_conv_matmul_add_ops(
             model=model,
             node=matmul_node,
@@ -1298,13 +1309,9 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
             weight_quantize_node=weight_quantize_node,
             input_quantize_params=input_quantize_params,
             weight_quantize_params=weight_quantize_params,
-            target_output=(
-                output_dequantize_node.output[0]
-                if output_dequantize_node
-                else bias_add_node.output[0]
-            ),
+            target_output=target_output,
             transpose_weight=True,
-            bias_add_name=bias_add_node.name,
+            bias_add_name="{}_bias_add".format(matmul_node.name),
             bias_initializer=bias_initializer,
             output_quantize_node=output_quantize_node,
             output_dequantize_node=output_dequantize_node,
@@ -1328,7 +1335,8 @@ def _convert_quantizable_matmul_and_add(model: ModelProto):
         # delete original Gemm node
         remove_node_and_params_from_graph(model, matmul_node)
         # delete original Add node
-        remove_node_and_params_from_graph(model, bias_add_node)
+        if bias_initializer is not None:
+            remove_node_and_params_from_graph(model, bias_add_node)
 
         conversion_count += 1
 
