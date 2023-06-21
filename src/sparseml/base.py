@@ -281,6 +281,9 @@ def check_version(
             )
         return False
 
+    # Tuan: Falcon requires Torch 2.0
+    raise_on_error = False
+
     if max_version and current_version > max_version:
         if raise_on_error:
             raise ImportError(

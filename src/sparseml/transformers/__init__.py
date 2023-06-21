@@ -40,7 +40,9 @@ def _check_transformers_install():
     # check for NM integration in transformers version
     import transformers as _transformers
 
-    if not _transformers.NM_INTEGRATED:
+    # Tuan
+    nm_transformers_check = False
+    if nm_transformers_check and not _transformers.NM_INTEGRATED:
         _LOGGER.warning(
             "the neuralmagic fork of transformers may not be installed. it can be "
             "installed via "
