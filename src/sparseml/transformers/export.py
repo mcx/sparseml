@@ -394,6 +394,7 @@ def export_transformer_to_onnx(
     onnx_file_path = os.path.join(model_path, onnx_file_name)
     kwargs = {"input_names": list(inputs.keys())} if task == "text-generation" else {}
 
+    import pdb; pdb.set_trace()
     export_onnx(
         model,
         inputs,

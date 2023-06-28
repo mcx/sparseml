@@ -218,6 +218,7 @@ class RecipeManagerTrainerInterface:
 
         # reload the state dict for the model now that architecture matches expected
         load_path = checkpoint or self.model_state_path
+        import pdb; pdb.set_trace()
         self._reload_model_state(load_path, orig_state_dict)
         self.manager_applied = True
         _LOGGER.info(
