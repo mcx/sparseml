@@ -758,8 +758,8 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
     a MatMulInteger
 
     | Starting with:
-    |          INPUT_0           INPUT_1
-    |            |               |
+    |                        INPUT_1
+    |                            |
     |     QuantizeLinear     QuantizeLinear
     |            |               |
     |     DequantizeLinear   DequantizeLinear
@@ -789,26 +789,72 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
     conversion_count = 0
     matmul_nodes = [n for n in model.graph.node if n.op_type in ["MatMul"]]
     graph = ONNXGraph(model)
+
+    for matmul_node in matmul_nodes:
+        graph = ONNXGraph(model)
+        #############
+        # Matching
+        #############
+        weight_transpose_node = graph.get_node_single_parent(matmul_node, 0)
+        if not weight_transpose_node or weight_transpose_node.op_type != "Transpose":
+            continue
+
+        weight_dequantize_node = graph.get_node_single_parent(weight_transpose_node, 0)
+        if (
+            not weight_dequantize_node
+            or weight_dequantize_node.op_type != "DequantizeLinear"
+        ):
+            continue
+        weight_quantize_node = graph.get_node_single_parent(weight_dequantize_node, 0)
+        if not weight_quantize_node or weight_quantize_node.op_type != "QuantizeLinear":
+            continue
+
+        input_quantize_node = graph.get_node_single_parent(matmul_node, 1)
+        if (
+            not input_quantize_node
+            or input_quantize_node.op_type not in _QUANTIZE_OP_NAMES
+        ):
+            continue
+
+        input_quantize_params = get_quantization_params(
+            model, input_quantize_node, include_target=False
+        )
+        weight_quantize_params = get_quantization_params(
+            model, weight_quantize_node, include_target=True
+        )
+        if weight_quantize_params.target is None:
+            # weight initializer not included
+            continue
+        if input_quantize_node.op_type != "DequantizeLinear":
+            continue
+
+        # See: _convert_quantizable_matmul_and_add
+
+
+##########################
+
+
+        
+
+
     for matmul_node in matmul_nodes:
         #############
         # Matching
         #############
-        input_dequantize_nodes = [
+        input_nodes = [
             graph.get_node_single_parent(matmul_node, i) for i in range(2)
         ]
-
-        # Make sure these input nodes are DequantizeLinear
-        if numpy.any(
-            [
-                (node is None or node.op_type != "DequantizeLinear")
-                for node in input_dequantize_nodes
-            ]
-        ):
+        transpose_node, dequantize_node = input_nodes
+        if transpose_node.op_type != "Transpose" or dequantize_node.op_type != "DequantizeLinear":
             continue
 
+        transpose_parent_node = graph.get_node_single_parent(transpose_node, 0)
+        if transpose_parent_node.op_type != "DequantizeLinear":
+            continue
+        
         # Make sure their parents are QuantizeLinear
         parents = [
-            graph.get_node_single_parent(node, 0) for node in input_dequantize_nodes
+            graph.get_node_single_parent(node, 0) for node in [transpose_parent_node, dequantize_node]
         ]
         if numpy.any(
             [
@@ -817,20 +863,10 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
             ]
         ):
             continue
-
-        # Make sure the first DequantizeLinear is followed by a Transpose
-        first_dequantize_node_child = graph.get_node_single_child(input_dequantize_nodes[0])
-        transpose_node = None
-        if first_dequantize_node_child is not None and first_dequantize_node_child.op_type == "Transpose":
-            import pdb; pdb.set_trace()
-            transpose_node = first_dequantize_node_child
-        else:
-            continue
-
         _LOGGER.debug(f"Matched quantizable MatMul: {matmul_node.name}")
 
         # Create MatMulInteger node
-        node_0, node_1 = input_dequantize_nodes
+        node_0, node_1 = transpose_parent_node, dequantize_node
 
         input_nodes = [
             node_0.input[0],  # a
