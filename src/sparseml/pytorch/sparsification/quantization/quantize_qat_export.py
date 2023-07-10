@@ -53,6 +53,9 @@ __all__ = [
 _LOGGER = logging.getLogger(__name__)
 
 
+DEBUG=False
+
+
 """
 Named tuple object to represent scale/zero point values for quantizing tenors
 """
@@ -809,65 +812,14 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
         if not weight_quantize_node or weight_quantize_node.op_type != "QuantizeLinear":
             continue
 
-        input_quantize_node = graph.get_node_single_parent(matmul_node, 1)
+        input_dequantize_node = graph.get_node_single_parent(matmul_node, 1)
         if (
-            not input_quantize_node
-            or input_quantize_node.op_type not in _QUANTIZE_OP_NAMES
+            not input_dequantize_node
+            or input_dequantize_node.op_type != "DequantizeLinear"
         ):
             continue
 
-        input_quantize_params = get_quantization_params(
-            model, input_quantize_node, include_target=False
-        )
-        weight_quantize_params = get_quantization_params(
-            model, weight_quantize_node, include_target=True
-        )
-        if weight_quantize_params.target is None:
-            # weight initializer not included
-            continue
-        if input_quantize_node.op_type != "DequantizeLinear":
-            continue
-
-        # See: _convert_quantizable_matmul_and_add
-
-
-##########################
-
-
-        
-
-
-    for matmul_node in matmul_nodes:
-        #############
-        # Matching
-        #############
-        input_nodes = [
-            graph.get_node_single_parent(matmul_node, i) for i in range(2)
-        ]
-        transpose_node, dequantize_node = input_nodes
-        if transpose_node.op_type != "Transpose" or dequantize_node.op_type != "DequantizeLinear":
-            continue
-
-        transpose_parent_node = graph.get_node_single_parent(transpose_node, 0)
-        if transpose_parent_node.op_type != "DequantizeLinear":
-            continue
-        
-        # Make sure their parents are QuantizeLinear
-        parents = [
-            graph.get_node_single_parent(node, 0) for node in [transpose_parent_node, dequantize_node]
-        ]
-        if numpy.any(
-            [
-                (parent is None or parent.op_type != "QuantizeLinear")
-                for parent in parents
-            ]
-        ):
-            continue
-        _LOGGER.debug(f"Matched quantizable MatMul: {matmul_node.name}")
-
-        # Create MatMulInteger node
-        node_0, node_1 = transpose_parent_node, dequantize_node
-
+        node_0, node_1 = weight_quantize_node, input_dequantize_node
         input_nodes = [
             node_0.input[0],  # a
             node_1.input[0],  # b
@@ -888,51 +840,10 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
 
         output_scale = node_0_parameters.scale * node_1_parameters.scale
 
-        has_bias = False
-
-        # Check if is followed by Add node (bias)
-        bias_add_node = graph.get_node_single_child(matmul_node)
-        if bias_add_node is not None and bias_add_node.op_type == "Add":
-            bias_initializer = get_init_by_name(
-                model, bias_add_node.input[1]
-            ) or get_init_by_name(model, bias_add_node.input[0])
-            if bias_initializer is not None:
-                # check if bias is finite
-                bias_initializer = numpy_helper.to_array(bias_initializer)
-                if numpy.all(numpy.isfinite(bias_initializer)):
-                    # Create initializer for quantized bias
-                    quantized_bias_initializer_name = f"{bias_initializer.name}_quant"
-                    has_bias = True
-
-                    bias_zero_point = 0
-                    quantized_bias = _quantize_array(
-                        bias_initializer,
-                        output_scale,
-                        bias_zero_point,
-                        dtype=numpy.int32,
-                    )
-                    quantized_bias_initializer = numpy_helper.from_array(
-                        quantized_bias,
-                        name=quantized_bias_initializer_name,
-                    )
-                    model.graph.initializer.append(quantized_bias_initializer)
-
-                    # Create new Add node for quantized bias
-                    quantized_add_node_name = f"{bias_add_node.name}_quant"
-                    quantized_add_node = onnx.helper.make_node(
-                        "Add",
-                        [matmul_int_op_node.output[0], quantized_bias_initializer_name],
-                        [f"{quantized_add_node_name}_output"],
-                        quantized_add_node_name,
-                    )
-                    model.graph.node.append(quantized_add_node)
-
         # Casting MatMulInteger INT32 output to FP32
 
         cast_node_name = f"{matmul_node.name}_cast"
-        cast_node_input = (
-            quantized_add_node.output if has_bias else matmul_int_op_node.output
-        )
+        cast_node_input = matmul_int_op_node.output
         cast_node = onnx.helper.make_node(
             "Cast",
             cast_node_input,
@@ -940,7 +851,7 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
             cast_node_name,
             to=getattr(onnx.TensorProto, "FLOAT"),  # get Float32 enum id
         )
-        model.graph.node.append(cast_node)
+        model.graph.node.append(cast_node)        
 
         output_scale_initializer_name = f"{matmul_node.name}.output_scale"
         model.graph.initializer.append(
@@ -950,7 +861,7 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
             )
         )
 
-        mul_node_output = bias_add_node.output if has_bias else matmul_node.output
+        mul_node_output = matmul_node.output
         mul_node = onnx.helper.make_node(
             "Mul",
             [cast_node.output[0], output_scale_initializer_name],
@@ -959,22 +870,19 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
         )
         model.graph.node.append(mul_node)
 
-        for node in input_dequantize_nodes:
-            delete_quant_node(model, node)
+        delete_quant_node(model, input_dequantize_node)
+        delete_quant_node(model, weight_quantize_node)
+        delete_quant_node(model, weight_transpose_node)
 
         # delete original MatMul node
         remove_node_and_params_from_graph(model, matmul_node)
-
-        # delete original Add node
-        if has_bias:
-            remove_node_and_params_from_graph(model, bias_add_node)
 
         conversion_count += 1
 
     if matmul_nodes:
         _LOGGER.info(
             f"Converted {conversion_count} quantizable MatMul "
-            "(A8A8 inputs, FP output) ops to MatMulInteger"
+            "(A8A8 inputs, FP output) ops for Falcon to MatMulInteger"
         )
         graph = ONNXGraph(model)
         graph.delete_unused_initializers()
@@ -1999,9 +1907,10 @@ def quantize_torch_qat_export(
     _convert_quantizable_matmul(model)
     _convert_quantizable_matmul_and_add(model)
 
-    # The following transforms are specific for Falcon
-    import pdb; pdb.set_trace()
-    _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model)
+    if DEBUG:
+        import pdb; pdb.set_trace()
+        # The following transforms are specific for Falcon
+        _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model)
 
     _fold_relu_quants(model)
 

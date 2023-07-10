@@ -287,7 +287,6 @@ def export_transformer_to_onnx(
 
     _LOGGER.info(f"Attempting onnx export for model at {model_path} for task {task}")
     config_args = {"finetuning_task": finetuning_task} if finetuning_task else {}
-    import pdb; pdb.set_trace()
     config = AutoConfig.from_pretrained(
         model_path,
         trust_remote_code=trust_remote_code,
