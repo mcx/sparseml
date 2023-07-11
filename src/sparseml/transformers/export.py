@@ -325,7 +325,6 @@ def export_transformer_to_onnx(
         recipe_args=None,
         teacher=None,
     )
-    import pdb; pdb.set_trace()
     applied = trainer.apply_manager(epoch=math.inf, checkpoint=None)
 
     if not applied:

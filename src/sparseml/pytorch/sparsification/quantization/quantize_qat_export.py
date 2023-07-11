@@ -53,9 +53,6 @@ __all__ = [
 _LOGGER = logging.getLogger(__name__)
 
 
-DEBUG=False
-
-
 """
 Named tuple object to represent scale/zero point values for quantizing tenors
 """
@@ -344,7 +341,6 @@ def _attribute_to_kwarg(attribute: onnx.AttributeProto):
 def _quantize_array(
     array: numpy.ndarray, scale: float, zero_point: int, dtype: Any = numpy.uint8
 ) -> numpy.ndarray:
-
     if dtype == numpy.uint8:
         tensor_dtype = torch.quint8
     elif dtype == numpy.int8:
@@ -571,7 +567,7 @@ def _convert_quantizable_gemm(
         remove_node_and_params_from_graph(model, gemm_node)
 
 
-def _convert_quantizable_matmuls_with_nonquantized_outputs(model: ModelProto):
+def _convert_quantizable_torch_matmuls_with_nonquantized_outputs(model: ModelProto):
     """
     A pass for converting a MatMul with quantized inputs into
     a MatMulInteger
@@ -755,7 +751,7 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs(model: ModelProto):
         graph.delete_unused_initializers()
 
 
-def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: ModelProto):
+def _convert_quantizable_matmuls_with_nonquantized_outputs_no_add(model: ModelProto):
     """
     A pass for converting a MatMul with quantized inputs into
     a MatMulInteger
@@ -792,13 +788,21 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
     conversion_count = 0
     matmul_nodes = [n for n in model.graph.node if n.op_type in ["MatMul"]]
     graph = ONNXGraph(model)
-
     for matmul_node in matmul_nodes:
         graph = ONNXGraph(model)
         #############
         # Matching
         #############
-        weight_transpose_node = graph.get_node_single_parent(matmul_node, 0)
+        input_idx, weight_idx = 0, 1
+
+        input_dequantize_node = graph.get_node_single_parent(matmul_node, input_idx)
+        if (
+            not input_dequantize_node
+            or input_dequantize_node.op_type != "DequantizeLinear"
+        ):
+            continue
+
+        weight_transpose_node = graph.get_node_single_parent(matmul_node, weight_idx)
         if not weight_transpose_node or weight_transpose_node.op_type != "Transpose":
             continue
 
@@ -812,14 +816,7 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
         if not weight_quantize_node or weight_quantize_node.op_type != "QuantizeLinear":
             continue
 
-        input_dequantize_node = graph.get_node_single_parent(matmul_node, 1)
-        if (
-            not input_dequantize_node
-            or input_dequantize_node.op_type != "DequantizeLinear"
-        ):
-            continue
-
-        node_0, node_1 = weight_quantize_node, input_dequantize_node
+        node_0, node_1 = input_dequantize_node, weight_quantize_node
         input_nodes = [
             node_0.input[0],  # a
             node_1.input[0],  # b
@@ -835,13 +832,7 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
         )
         model.graph.node.append(matmul_int_op_node)
 
-        node_0_parameters = get_quantization_params(model, node_0)
-        node_1_parameters = get_quantization_params(model, node_1)
-
-        output_scale = node_0_parameters.scale * node_1_parameters.scale
-
         # Casting MatMulInteger INT32 output to FP32
-
         cast_node_name = f"{matmul_node.name}_cast"
         cast_node_input = matmul_int_op_node.output
         cast_node = onnx.helper.make_node(
@@ -851,7 +842,12 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
             cast_node_name,
             to=getattr(onnx.TensorProto, "FLOAT"),  # get Float32 enum id
         )
-        model.graph.node.append(cast_node)        
+        model.graph.node.append(cast_node)
+
+        # Output scale
+        node_0_parameters = get_quantization_params(model, node_0)
+        node_1_parameters = get_quantization_params(model, node_1)
+        output_scale = node_0_parameters.scale * node_1_parameters.scale
 
         output_scale_initializer_name = f"{matmul_node.name}.output_scale"
         model.graph.initializer.append(
@@ -870,9 +866,13 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
         )
         model.graph.node.append(mul_node)
 
-        delete_quant_node(model, input_dequantize_node)
+        # only delete input node if the matmul is the only child
+        current_graph = ONNXGraph(model)
+        if len(current_graph.get_node_children(input_dequantize_node)) == 1:
+            delete_quant_node(model, input_dequantize_node)
         delete_quant_node(model, weight_quantize_node)
-        delete_quant_node(model, weight_transpose_node)
+        delete_quant_node(model, weight_dequantize_node)
+        remove_node_and_params_from_graph(model, weight_transpose_node)
 
         # delete original MatMul node
         remove_node_and_params_from_graph(model, matmul_node)
@@ -882,13 +882,13 @@ def _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model: Mod
     if matmul_nodes:
         _LOGGER.info(
             f"Converted {conversion_count} quantizable MatMul "
-            "(A8A8 inputs, FP output) ops for Falcon to MatMulInteger"
+            "(A8A8 inputs, FP output) ops to MatMulInteger"
         )
         graph = ONNXGraph(model)
         graph.delete_unused_initializers()
 
 
-def _convert_quantizable_matmul_with_quantized_outputs(model: ModelProto):
+def _convert_quantizable_torch_matmul_with_quantized_outputs(model: ModelProto):
     """
     A pass for converting a MatMul with quantized inputs and outputs into
     a QLinearMatMul. This MatMul is the result of quantizing native
@@ -1060,9 +1060,9 @@ def _convert_quantizable_matmul_with_quantized_outputs(model: ModelProto):
     return conversion_count
 
 
-def _convert_quantizable_matmul(model: ModelProto):
-    _convert_quantizable_matmul_with_quantized_outputs(model)
-    _convert_quantizable_matmuls_with_nonquantized_outputs(model)
+def _convert_quantizable_torch_matmul(model: ModelProto):
+    _convert_quantizable_torch_matmul_with_quantized_outputs(model)
+    _convert_quantizable_torch_matmuls_with_nonquantized_outputs(model)
 
 
 def _add_quantized_conv_matmul_add_ops(
@@ -1904,13 +1904,20 @@ def quantize_torch_qat_export(
     _quantize_qat_embedding(model)
     _propagate_mobilebert_embedding_quantization(model)
     _propagate_through_split(model)
-    _convert_quantizable_matmul(model)
+
+    # Convert standalone torch MatMuls with quantized inputs
+    _convert_quantizable_torch_matmul(model)
+
+    # Convert MatMuls with quantized weights, quantized inputs,
+    # quantized outputs and an Add node
     _convert_quantizable_matmul_and_add(model)
 
-    if DEBUG:
-        import pdb; pdb.set_trace()
-        # The following transforms are specific for Falcon
-        _convert_quantizable_matmuls_with_nonquantized_outputs_for_falcon(model)
+    # Convert MatMuls with quantized weights, quantized inputs,
+    # non-quantized outputs, and w/o an Add
+    import pdb
+
+    pdb.set_trace()
+    _convert_quantizable_matmuls_with_nonquantized_outputs_no_add(model)
 
     _fold_relu_quants(model)
 

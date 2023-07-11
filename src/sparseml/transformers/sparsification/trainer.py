@@ -683,7 +683,6 @@ class RecipeManagerTrainerInterface:
             dd = torch.load(os.path.join(load_path, f), map_location="cpu")
             loaded_state_dict.update(dd)
 
-        import pdb; pdb.set_trace()
         _, missing, unexpected, mismatched, _, _ = self.model._load_pretrained_model(
             model=self.model,
             state_dict=loaded_state_dict,
