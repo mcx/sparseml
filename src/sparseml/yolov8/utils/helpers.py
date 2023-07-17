@@ -54,22 +54,29 @@ def check_coco128_segmentation(args: Namespace) -> Namespace:
 def create_grad_sampler(
     trainer: BaseTrainer, stride: int, model: DetectionModel
 ) -> Dict[str, Any]:
-    if not hasattr(trainer, "train_loader"):
-        # initialize train loader (if not already initialized)
-        # and set it as the trainer's attribute
-        train_set_path = trainer.trainset
-        train_loader, _ = create_dataloader(
-            path=train_set_path,
-            imgsz=trainer.args.imgsz,
-            batch_size=trainer.args.batch,
-            stride=stride,
-        )
-        trainer.train_loader = train_loader
 
     # convert model's arg to a namespace,
     # this is expected by the trainer's criterion
     model.args = Namespace(**model.args)
     trainer.model = model
+
+    if not hasattr(trainer, "train_loader"):
+        # initialize train loader (if not already initialized)
+        # and set it as the trainer's attribute
+        train_set_path = trainer.trainset
+        # train_loader, _ = create_dataloader(
+        #     path=train_set_path,
+        #     imgsz=trainer.args.imgsz,
+        #     batch_size=trainer.args.batch,
+        #     stride=stride,
+        # )
+        print(stride)
+        train_loader = trainer.get_dataloader(
+            train_set_path,
+            batch_size=trainer.args.batch,
+            rank=-1
+        )
+        trainer.train_loader = train_loader
 
     grad_sampler = dict(
         data_loader_builder=trainer._get_data_loader_builder(),
