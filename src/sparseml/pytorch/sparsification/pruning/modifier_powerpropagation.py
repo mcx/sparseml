@@ -65,7 +65,7 @@ class PowerpropagationWrapper(Module):
         self.set_alpha(alpha)
 
     def forward(self, x):
-        weight = self.layer.weight * pow(abs(self.layer.weight), self.alpha - 1)
+        weight = self.layer.weight * torch.pow(torch.abs(self.layer.weight), self.alpha - 1)
 
         if isinstance(self.layer, Conv2d):
             return F.conv2d(
@@ -86,11 +86,10 @@ class PowerpropagationWrapper(Module):
 
     def set_alpha(self, new_alpha):
         with torch.no_grad():
-
-            self.layer.weight *= pow(abs(self.layer.weight), self.alpha / new_alpha - 1)
+            self.layer.weight.data *= torch.pow(torch.abs(self.layer.weight.data), self.alpha / new_alpha - 1)
             # If there were any zeros in the weights, these may now be nan,
             # depending on the old and new values of alpha.
-            self.layer.weight.data = torch.nan_to_num(self.layer.weight)
+            self.layer.weight.data = torch.nan_to_num(self.layer.weight.data, 0.00000001)
             self.alpha = torch.tensor(float(new_alpha))
 
 
@@ -262,7 +261,7 @@ class PowerpropagationModifier(ScheduledModifier):
         if isinstance(layer, PowerpropagationWrapper):
             # Setting alpha to 1 automatically updates the inner layer
             # weights to the correct non-exponentiated values.
-            layer.set_alpha(1)
+            layer.set_alpha(1.)
             self._set_module(model, name, layer.layer)
         else:
             raise RuntimeError(f"don't know how to undo powerpropagation for {layer}")
