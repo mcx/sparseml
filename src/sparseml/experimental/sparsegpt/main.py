@@ -64,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "dataset",
         type=str,
-        choices=["wikitext2", "ptb", "c4", "open_platypus", "platypus"],
+        choices=["wikitext2", "ptb", "c4", "open_platypus", "platypus", "gsm8k"],
         help="Where to extract calibration data from.",
     )
     parser.add_argument("--data-sequence-length", type=int, default=2048)
@@ -155,7 +155,11 @@ if __name__ == "__main__":
         wandb.init(config=args)
 
     print("Load model", flush=True)
-    model, seqlen = load_model(args)
+    # Tuan: TODO clean up
+    if args.dataset == "gsm8k":
+        model, seqlen = load_model(args, max_seq_len=1024)
+    else:
+        model, seqlen = load_model(args)
 
     print("Load data", flush=True)
     dataloader, testloader, tokenizer = load_data(args, None, seqlen)

@@ -63,7 +63,6 @@ class SequentialSparseGPT:
 
     def compress(self, dev: str = "cuda:0", **kwargs):
         accum_kwargs = deepcopy(kwargs)
-
         if "args" not in kwargs:
             # Ensure that all CLI arguments are also passed down to all the steps
             kwargs["args"] = self.args

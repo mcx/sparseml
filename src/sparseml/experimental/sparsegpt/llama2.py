@@ -22,7 +22,10 @@ from sparseml.experimental.sparsegpt.utils import (
     execute_offloaded_module,
     ppl_eval_general,
     get_wikitext2,
+    get_openplatypus,
+    get_gsm8k
 )
+
 
 class SequentialSparseGPT_Llama2(SequentialSparseGPT):
     def compressible_layers(self):
@@ -73,14 +76,14 @@ def prepare_sparsegpt(model, dataloader, args, dev) -> SequentialSparseGPT:
     return sequential_sparsegpt
 
 
-def load_model(args):
+def load_model(args, max_seq_len: int = None):
     model = args.model
 
     from transformers import LlamaForCausalLM
 
     model = LlamaForCausalLM.from_pretrained(model, torch_dtype="auto")
     model.eval()
-    seqlen = model.config.max_position_embeddings
+    seqlen = model.config.max_position_embeddings if max_seq_len is None else max_seq_len
     return model, seqlen
 
 
@@ -94,6 +97,8 @@ def load_data(args, seqlen, split=0.1):
         return get_wikitext2(nsamples, seed, seqlen, model)
     elif "platypus" in name:
         return get_openplatypus(nsamples, seed, seqlen, model, split)
+    elif "gsm8k" in name:
+        return get_gsm8k(nsamples, seed, seqlen, model)
 
 
 def cache_attention_inputs(model, data_loader, device, nsamples):
