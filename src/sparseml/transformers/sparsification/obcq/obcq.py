@@ -35,7 +35,7 @@ from sparseml.transformers.utils.model import SparseCasualLM
 __all__ = ["one_shot"]
 
 _LOGGER = logging.getLogger(__name__)
-SUPPORTED_DATASETS = ["wikitext2", "ptb", "c4", "open_platypus"]
+SUPPORTED_DATASETS = ["wikitext2", "ptb", "c4", "open_platypus", "gsm8k"]
 SUPPORTED_MODELS = ["opt", "llama"]
 
 
@@ -69,7 +69,7 @@ def one_shot(
 
         if deploy_dir.exists():
             raise RuntimeError(f"deploy_dir={deploy_dir} already exists")
-
+    import pdb; pdb.set_trace()
     model_loader_fn = None
     forward_fn = None
     if "opt" in model_path.lower():
@@ -86,6 +86,7 @@ def one_shot(
         raise ValueError(
             f"dataset_name={dataset_name} should be one of {SUPPORTED_DATASETS}"
         )
+    import pdb; pdb.set_trace()
     dataset = TransformersDataset.load_from_registry(
         dataset_name,
         model=model_path,
@@ -146,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "dataset",
         type=str,
-        choices=["wikitext2", "ptb", "c4", "open_platypus"],
+        choices=["wikitext2", "ptb", "c4", "open_platypus", "gsm8k"],
         help="Name of dataset to extract calibration data from",
     )
     parser.add_argument(
