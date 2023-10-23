@@ -40,6 +40,14 @@ class GSM8K(TransformersDataset):
             split_percent_to_use=split_percent_to_use,
             shuffle=True,
         )
-
-        processed_data = [str(sample["text"]) for sample in self._data]
+        processed_data = []
+        for sample in self._data:
+            example = (
+                f"Question: {{question}}.\nAnswer: {{answer}}{{eos_token}}".format(
+                    question=sample["question"],
+                    answer=sample["answer"],
+                    eos_token=self.tokenizer.eos_token,
+                )
+            )
+            processed_data.append(example)
         self.create_dataloader(processed_data)
