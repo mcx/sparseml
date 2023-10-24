@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import typing
 from math import ceil
 
 import torch
@@ -55,7 +56,19 @@ def catch(model, attention_layer, target_keys, data_loader, nsamples):
         if nsamples is not None and input_id == nsamples:
             break
         try:
-            model(inp.to(device), use_cache=False)
+            if isinstance(inp, torch.Tensor):
+                model(inp.to(device), use_cache=False)
+            elif isinstance(inp, typing.Dict):
+                inp = {
+                    k: torch.reshape(torch.tensor(v, dtype=torch.int64), (1, -1)).to(
+                        device
+                    )
+                    for k, v in inp.items()
+                }
+                model(**inp, use_cache=False)
+                del inp
+                inp = None
+                torch.cuda.empty_cache()
         except ValueError:
             pass
     replace_module(model, catcher_module, attention_layer)
