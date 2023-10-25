@@ -220,7 +220,7 @@ class LayerCompressor:
 
 
 def _find_quant_layers(
-    module, layers=[torch.nn.qat.Conv2d, torch.nn.qat.Linear], name=""
+    module, layers=[torch.nn.qat.Conv2d, torch.nn.qat.Linear, nn.Conv2d, nn.Linear], name=""
 ):
     res = {}
     # search for QAT versions of layers
