@@ -7,13 +7,22 @@ import pandas as pd
 import torch
 from datasets import load_dataset
 from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers.models.llama import QuantizableMatMul
 
 from sparseml.experimental.sparsegpt.llama2 import cache_attention_inputs
 from sparseml.experimental.sparsegpt.utils import execute_offloaded_module
 
 
-MODULE_TYPE = "gate_proj"
-assert MODULE_TYPE in ["k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+MODULE_TYPE = "attn_output_matmul"
+assert MODULE_TYPE in [
+    "k_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+    "attn_weights_matmul",
+    "attn_output_matmul",
+]
 
 SEED = 2023
 NSAMPLES = 64
@@ -97,12 +106,25 @@ def save_stats(name):
     return stats_dict
 
 
-def extract_inputs(name):
+def extract_inputs_linear_module(name):
     def tmp(_, inp, out):
         if name in inputs:
             inputs[name].append(inp[0])
         else:
             inputs[name] = [inp[0]]
+
+    return tmp
+
+
+def extract_inputs_bmm_module(name):
+    def tmp(_, inp, out):
+        assert len(inp) == 2
+        for k in range(2):
+            inp_name = f"{name}_inp_{k}"
+            if inp_name in inputs:
+                inputs[inp_name].append(inp[k])
+            else:
+                inputs[inp_name] = [inp[k]]
 
     return tmp
 
@@ -123,7 +145,7 @@ def llama2_forward(model, data_loader, device, nsamples=None):
         buffer = [b[0] for b in buffer]
         previous_names = list(inputs.keys())
         for n in previous_names:
-            if not n.endswith(MODULE_TYPE):
+            if n.find(MODULE_TYPE) < 0:
                 continue
             stats = save_stats(n)
             del inputs[n]
@@ -159,10 +181,14 @@ handles = []
 inputs = {}
 
 for name, module in model.named_modules():
-    print(f"{name}\n")
-    if isinstance(module, torch.nn.Linear) and name.endswith(MODULE_TYPE):
+    if not name.endswith(MODULE_TYPE):
+        continue
+    if isinstance(module, torch.nn.Linear):
         print(f"Register hook for {name}\n")
-        handles.append(module.register_forward_hook(extract_inputs(name)))
+        handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
+    elif isinstance(module, QuantizableMatMul):
+        print(f"Register hook for QuantizableMatMul {name}\n")
+        handles.append(module.register_forward_hook(extract_inputs_bmm_module(name)))
 
 model.eval()
 
