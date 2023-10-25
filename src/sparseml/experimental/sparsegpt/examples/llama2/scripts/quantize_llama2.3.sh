@@ -4,8 +4,8 @@ export CUDA_VISIBLE_DEVICES=3
 
 BRANCH=$(git branch --show-current)
 echo "Branch: $BRANCH"
-if [ "$BRANCH" != "research/sparsegpt/llama2" ]; then
-    echo "Expected branch research/sparsegpt/llama2"
+if [ "$BRANCH" != "tuan/exp_sparsegpt_llama2_gsm8k_02" ]; then
+    echo "Expected branch tuan/exp_sparsegpt_llama2_gsm8k_02"
     exit 1
 fi
 

@@ -13,6 +13,13 @@ quantization_modifiers:
       - LlamaRotaryEmbedding
       - LlamaRMSNorm
       - SiLUActivation
+      - QuantizableMatMul
+      - MatMulLeftInput_QK
+      - MatMulRightInput_QK
+      - MatMulOutput_QK
+      - MatMulLeftInput_PV
+      - MatMulRightInput_PV
+      - MatMulOutput_PV
       - model.layers.0.mlp.down_proj
       - model.layers.1.mlp.down_proj
       - model.layers.2.mlp.down_proj
