@@ -12,7 +12,7 @@ fi
 ROOT=$HOME/src/neuralmagic/sparseml/src/sparseml/experimental/sparsegpt
 RECIPE_DIR=/home/tuan/src/neuralmagic/sparseml/src/sparseml/experimental/sparsegpt/examples/llama2/recipes
 
-RECIPE_NAME=llama-2-7b_quant
+RECIPE_NAME=llama-2-7b_quant.bmm
 RECIPE=$RECIPE_DIR/$RECIPE_NAME.md
 
 DATASET=gsm8k
