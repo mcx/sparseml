@@ -13,7 +13,7 @@ from sparseml.experimental.sparsegpt.llama2 import cache_attention_inputs
 from sparseml.experimental.sparsegpt.utils import execute_offloaded_module
 
 
-MODULE_TYPE = "attn_output_matmul"
+MODULE_TYPE = "gate_proj"
 assert MODULE_TYPE in [
     "k_proj",
     "o_proj",
@@ -29,9 +29,12 @@ NSAMPLES = 64
 
 SRC_MODEL_DIR = "/network/tuan/models/llama/GSM8K/base_finetuned_pruned"
 SRC_MODEL_NAME = "llama-2-7b_pruned60"
-model_name_or_path = os.path.join(SRC_MODEL_DIR, SRC_MODEL_NAME)
+#model_name_or_path = os.path.join(SRC_MODEL_DIR, SRC_MODEL_NAME)
+model_name_or_path = "/network/tuan/src/neuralmagic/ml-experiments/nlg-text_generation/gsm8k-llama2_7b-oneshot_sparse_finetune_sparsegpt/pruned80/training"
 
-stats_path = os.path.join(SRC_MODEL_DIR, SRC_MODEL_NAME, "stats")
+model_name_or_path = "/network/tuan/src/neuralmagic/ml-experiments/nlg-text_generation/gsm8k-llama2_7b-base/dense/training"
+
+stats_path = os.path.join(model_name_or_path, "stats_seqlen512")
 if not os.path.exists(stats_path):
     os.makedirs(stats_path)
 device = "cuda:1"
@@ -55,7 +58,7 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
         )
         prompt = torch.tensor(tokenizer.encode(prompt), dtype=torch.int64)
         example = torch.tensor(tokenizer.encode(example), dtype=torch.int64)
-        max_seq_len = 1024
+        max_seq_len = 512
         padding = max_seq_len - example.shape[0]
         if padding > 0:
             example = torch.cat((example, torch.zeros(padding, dtype=torch.int64) - 1))
@@ -173,31 +176,40 @@ def llama2_forward(model, data_loader, device, nsamples=None):
 
     return logits, stats_dict
 
+for MODULE_TYPE in [
+    "k_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj",
+    "attn_weights_matmul",
+    "attn_output_matmul",
+]:
+    model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype="auto")
+    tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path, torch_dtype="auto")
 
-model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype="auto")
-tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path, torch_dtype="auto")
+    handles = []
+    inputs = {}
 
-handles = []
-inputs = {}
+    for name, module in model.named_modules():
+        if not name.endswith(MODULE_TYPE):
+            continue
+        if isinstance(module, torch.nn.Linear):
+            print(f"Register hook for {name}\n")
+            handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
+        elif isinstance(module, QuantizableMatMul):
+            print(f"Register hook for QuantizableMatMul {name}\n")
+            handles.append(module.register_forward_hook(extract_inputs_bmm_module(name)))
 
-for name, module in model.named_modules():
-    if not name.endswith(MODULE_TYPE):
-        continue
-    if isinstance(module, torch.nn.Linear):
-        print(f"Register hook for {name}\n")
-        handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
-    elif isinstance(module, QuantizableMatMul):
-        print(f"Register hook for QuantizableMatMul {name}\n")
-        handles.append(module.register_forward_hook(extract_inputs_bmm_module(name)))
+    model.eval()
 
-model.eval()
+    dataset = get_gsm8k()
 
-dataset = get_gsm8k()
+    with torch.no_grad():
+        logits, stats_dict = llama2_forward(model, dataset, device)
 
-with torch.no_grad():
-    logits, stats_dict = llama2_forward(model, dataset, device)
+    df = pd.DataFrame.from_dict(stats_dict)
+    df.to_csv(os.path.join(stats_path, f"{MODULE_TYPE}_input_tensors.csv"), index=False)
 
-df = pd.DataFrame.from_dict(stats_dict)
-df.to_csv(os.path.join(stats_path, f"{MODULE_TYPE}_input_tensors.csv"), index=False)
-
-print("Done")
+    torch.cuda.empty_cache()
+    print(f"Done {MODULE_TYPE}")
