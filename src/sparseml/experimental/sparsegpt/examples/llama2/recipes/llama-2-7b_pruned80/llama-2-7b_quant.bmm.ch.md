@@ -39,6 +39,11 @@ quantization_modifiers:
       - model.layers.30.mlp.down_proj
       - model.layers.31.mlp.down_proj
     scheme_overrides:
+      Linear:
+        weights:
+          num_bits: 8
+          symmetric: true
+          strategy: channel
       Embedding:
         input_activations: null
         weights:
