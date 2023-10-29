@@ -18,9 +18,8 @@ from typing import Dict, List, Tuple
 import torch
 import torch.nn as nn
 
-from sparseml.experimental.sparsegpt.quant import WeightFakeQuantizer
+from quant import WeightFakeQuantizer
 from sparseml.experimental.sparsegpt.sparsegpt import SparseGPT
-
 
 class BaseCompressor:
     def __init__(self, model):
@@ -64,7 +63,10 @@ class LayerCompressor(BaseCompressor):
             gpts = {}
             for name in subset:
                 gpts[name] = SparseGPT(subset[name])
-                if self.manager is not None and self.manager.quantization_modifiers:
+                if (
+                    self.manager is not None
+                    and self.manager.quantization_modifiers
+                ):
                     gpts[name].quantizer = WeightFakeQuantizer(subset[name])
 
             def add_batch(name):

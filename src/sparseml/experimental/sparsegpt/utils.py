@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from math import ceil
-
 import torch
+import typing
+from math import ceil
 
 
 class Catcher(torch.nn.Module):
@@ -48,6 +48,7 @@ def replace_module(model, old_module, new_module):
 
 
 def catch(model, attention_layer, target_keys, data_loader, nsamples):
+    nsamples = 128
     catcher_module = Catcher(attention_layer, target_keys)
     replace_module(model, attention_layer, catcher_module)
     device = next(attention_layer.parameters()).device
@@ -55,7 +56,14 @@ def catch(model, attention_layer, target_keys, data_loader, nsamples):
         if nsamples is not None and input_id == nsamples:
             break
         try:
-            model(inp.to(device), use_cache=False)
+            if isinstance(inp, torch.Tensor):
+                model(inp.to(device), use_cache=False)
+            elif isinstance(inp, typing.Dict):
+                inp = {k: torch.reshape(torch.tensor(v, dtype=torch.int64), (1, -1)).to(device) for k, v in inp.items()}
+                model(**inp, use_cache=False)
+                del inp
+                inp = None
+                torch.cuda.empty_cache()
         except ValueError:
             pass
     replace_module(model, catcher_module, attention_layer)
@@ -80,9 +88,7 @@ def execute_offloaded_module(
         if cached_inputs is None:
             module_kwargs = kwargs
         else:
-            module_kwargs = {
-                key: cached_inputs[key][input_index] for key in cached_inputs
-            }
+            module_kwargs = {key: cached_inputs[key][input_index] for key in cached_inputs}
             module_kwargs.update(kwargs)
         output = module(inp.to(dev), **module_kwargs)
         if overwrite_buffer:
@@ -136,13 +142,7 @@ class SequentialCompressor(OffLoadedModule):
         self.cache_inputs = False
 
         for name, child in module.named_modules():
-            setattr(
-                self._module,
-                name,
-                SequentialCompressor(
-                    child, device, compression_algorithm, self._module
-                ),
-            )
+            setattr(self._module, name, SequentialCompressor(child, device, compression_algorithm, self._module))
 
     def is_compressible(self):
         if self.compression_algorithm is not None:
@@ -188,12 +188,12 @@ class SequentialCompressor(OffLoadedModule):
 
 @torch.no_grad()
 def ppl_eval_general(
-    eval_logits,
-    model,
-    dataloader,
-    dev,
-    nsamples=None,
-    max_samples_per_iteration=128,
+        eval_logits,
+        model,
+        dataloader,
+        dev,
+        nsamples=None,
+        max_samples_per_iteration=128,
 ):
     print("Evaluating perplexity...")
 
@@ -201,17 +201,13 @@ def ppl_eval_general(
         nsamples = len(dataloader)
 
     number_iterations = int(ceil(nsamples / max_samples_per_iteration))
-    neg_log_likelihood = 0.0
+    neg_log_likelihood = 0.
     number_tokens = 0
     for iteration in range(number_iterations):
         if iteration < number_iterations - 1:
-            samples = dataloader[
-                iteration
-                * max_samples_per_iteration : (iteration + 1)
-                * max_samples_per_iteration
-            ]
+            samples = dataloader[iteration*max_samples_per_iteration:(iteration+1)*max_samples_per_iteration]
         else:
-            samples = dataloader[iteration * max_samples_per_iteration :]
+            samples = dataloader[iteration * max_samples_per_iteration:]
 
         logits = eval_logits(model, samples, dev)
 
@@ -232,7 +228,6 @@ def ppl_eval_general(
 
     ppl = torch.exp(neg_log_likelihood / number_tokens)
     print(f"Perplexity: {ppl.item():3f}")
-
 
 def get_wikitext2(nsamples, seed, seqlen, model):
     from datasets import load_dataset
@@ -258,11 +253,8 @@ def get_wikitext2(nsamples, seed, seqlen, model):
         tar[:, :-1] = -100
         trainloader.append((inp, tar))
 
-    testloader = [
-        testenc[:, (i * seqlen) : ((i + 1) * seqlen)]
-        for i in range(testenc.numel() // seqlen)
-    ]
-    testloader.append(testenc[:, (testenc.numel() // seqlen) * seqlen :])
+    testloader = [testenc[:, (i*seqlen):((i+1)*seqlen)] for i in range(testenc.numel() // seqlen)]
+    testloader.append(testenc[:, (testenc.numel() // seqlen)*seqlen:])
 
     return trainloader, testloader, tokenizer
 
@@ -330,10 +322,7 @@ def get_c4(nsamples, seed, seqlen, model):
 
     valenc = tokenizer(" ".join(valdata[:1100]["text"]), return_tensors="pt")
     valenc = valenc.input_ids[:, : (256 * seqlen)]
-    testloader = [
-        valenc[:, (i * seqlen) : ((i + 1) * seqlen)]
-        for i in range(valenc.numel() // seqlen)
-    ]
+    testloader = [valenc[:, (i*seqlen):((i+1)*seqlen)] for i in range(valenc.numel() // seqlen)]
 
     return trainloader, testloader, tokenizer
 
@@ -355,17 +344,8 @@ def get_openplatypus(nsamples, seed, seqlen, model, split):
         traindata = traindata[:nsamples]
 
     alpaca_template = {
-        "prompt_input": "Below is an instruction that describes a task, "
-        "paired with an input that provides further context. "
-        "Write a response that appropriately completes the request."
-        "\n\n### Instruction:\n{instruction}"
-        "\n\n### Input:\n{input}"
-        "\n\n### Response:\n",
-        "prompt_no_input": "Below is an instruction that describes a task. "
-        "Write a response that appropriately "
-        "completes the request."
-        "\n\n### Instruction:\n{instruction}"
-        "\n\n### Response:\n",
+        "prompt_input": "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n",
+        "prompt_no_input": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response:\n",
     }
 
     from transformers import AutoTokenizer
@@ -374,13 +354,9 @@ def get_openplatypus(nsamples, seed, seqlen, model, split):
 
     def _process_sample(sample):
         if "input" in sample:
-            processed_sample = alpaca_template["prompt_input"].format(
-                instruction=sample["instruction"], input=sample["input"]
-            )
+            processed_sample = alpaca_template["prompt_input"].format(instruction=sample["instruction"], input=sample["input"])
         else:
-            processed_sample = alpaca_template["prompt_no_input"].format(
-                instruction=sample["instruction"]
-            )
+            processed_sample = alpaca_template["prompt_no_input"].format(instruction=sample["instruction"])
 
         if "output" in sample:
             processed_sample += sample["output"]
@@ -400,6 +376,7 @@ def get_openplatypus(nsamples, seed, seqlen, model, split):
                 tokenized_sample = torch.concatenate(
                     (tokenized_sample, torch.tensor((tokenizer.eos_token_id,))),
                 )
+
         tokenized_sample = torch.unsqueeze(tokenized_sample, dim=0)
 
         return tokenized_sample
@@ -408,3 +385,150 @@ def get_openplatypus(nsamples, seed, seqlen, model, split):
     testenc = [_process_sample(sample) for sample in testdata]
 
     return trainenc, testenc, tokenizer
+
+
+def get_gsm8k(nsamples, seed, seqlen, model):
+    import copy
+    from datasets import load_dataset
+    from transformers import LlamaTokenizer
+    dataset_train = load_dataset("gsm8k", "main", split="train")
+    dataset_test = load_dataset("gsm8k", "main", split="test")
+    
+    tokenizer = LlamaTokenizer.from_pretrained(model)
+    tokenizer.add_special_tokens(
+        {
+            "pad_token": "<PAD>",
+        }
+    )
+
+    def process_sample(sample):
+        IGNORE_INDEX = -100  # The default setting in CrossEntropyLoss
+        prompt = f"Question: {{question}}.\nAnswer:".format(
+            question=sample["question"],
+        )
+        example = f"Question: {{question}}.\nAnswer: {{answer}}{{eos_token}}".format(
+            question=sample["question"],
+            answer=sample["answer"],
+            eos_token=tokenizer.eos_token,
+        )
+        prompt = torch.tensor(tokenizer.encode(prompt), dtype=torch.int64)
+        example = torch.tensor(tokenizer.encode(example), dtype=torch.int64)
+        max_seq_len = 1024
+        padding = max_seq_len - example.shape[0]
+        if padding > 0:
+            example = torch.cat((example, torch.zeros(padding, dtype=torch.int64) - 1))
+        elif padding < 0:
+            example = example[: max_seq_len]
+        labels = copy.deepcopy(example)
+        labels[: len(prompt)] = -1
+        example_mask = example.ge(0)
+        label_mask = labels.ge(0)
+        example[~example_mask] = 0
+        labels[~label_mask] = IGNORE_INDEX
+        example_mask = example_mask.float()
+        label_mask = label_mask.float()
+
+        return {
+            "input_ids": example,
+            "labels": labels,
+            "attention_mask":example_mask,
+        }
+    dataset_train = dataset_train.map(
+        lambda sample: process_sample(sample),
+        batched=False,
+        remove_columns=list(dataset_train.features),
+    )
+
+    dataset_test = dataset_test.map(
+        lambda sample: process_sample(sample),
+        batched=False,
+        remove_columns=list(dataset_test.features),
+    )
+
+    return dataset_train, dataset_test, tokenizer
+
+
+# def get_gsm8k_v2(nsamples, seed, seqlen, model, split):
+#     from datasets import load_dataset
+#     from transformers import LlamaTokenizer
+#     dataset_train = load_dataset("gsm8k", "main", split="train")
+#     dataset_test = load_dataset("gsm8k", "main", split="test")
+    
+#     tokenizer = LlamaTokenizer.from_pretrained(model)
+#     tokenizer.add_special_tokens(
+#         {
+#             "pad_token": "<PAD>",
+#         }
+#     )
+
+#     nsamples = len(dataset_train) if nsamples is None else nsamples
+#     import random
+#     random.seed(seed)
+#     traindata = list(dataset_train)
+#     random.shuffle(dataset_train)
+#     dataset_train = dataset_train[:nsamples] if nsamples < len(dataset_train) else dataset_train
+    
+#     example = f"Question: {{question}}.\nAnswer: {{answer}}{{eos_token}}".format(
+#         question=sample["question"],
+#         answer=sample["answer"],
+#         eos_token=tokenizer.eos_token,
+#     )
+
+
+
+#     from datasets import load_dataset
+
+#     traindata = load_dataset("garage-bAInd/Open-Platypus", split="train")
+
+#     import random
+#     random.seed(seed)
+#     traindata = list(traindata)
+#     random.shuffle(traindata)
+#     number_test_samples = max(1, int(split * len(traindata)))
+#     testdata = traindata[-number_test_samples:]
+#     traindata = traindata[:-number_test_samples]
+#     if nsamples is not None and nsamples < len(traindata):
+#         traindata = traindata[:nsamples]
+
+#     alpaca_template = {
+#         "prompt_input": "Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n",
+#         "prompt_no_input": "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response:\n",
+#     }
+
+#     from transformers import AutoTokenizer
+
+#     tokenizer = AutoTokenizer.from_pretrained(model)
+
+#     def _process_sample(sample):
+#         if "input" in sample:
+#             processed_sample = alpaca_template["prompt_input"].format(instruction=sample["instruction"], input=sample["input"])
+#         else:
+#             processed_sample = alpaca_template["prompt_no_input"].format(instruction=sample["instruction"])
+
+#         if "output" in sample:
+#             processed_sample += sample["output"]
+
+#         tokenized_sample = tokenizer(
+#             processed_sample,
+#             truncation=True,
+#             max_length=seqlen,
+#             return_tensors="pt",
+#             padding=False,
+#         )["input_ids"][0]
+
+#         if tokenized_sample[-1] != tokenizer.eos_token_id:
+#             if len(tokenized_sample) == seqlen:
+#                 tokenized_sample[-1] = tokenizer.eos_token_id
+#             else:
+#                 tokenized_sample = torch.concatenate(
+#                     (tokenized_sample, torch.tensor((tokenizer.eos_token_id,))),
+#                 )
+
+#         tokenized_sample = torch.unsqueeze(tokenized_sample, dim=0)
+
+#         return tokenized_sample
+
+#     trainenc = [_process_sample(sample) for sample in traindata]
+#     testenc = [_process_sample(sample) for sample in testdata]
+
+#     return trainenc, testenc, tokenizer

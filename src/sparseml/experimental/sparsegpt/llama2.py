@@ -15,16 +15,15 @@
 import torch
 
 from sparseml.experimental.sparsegpt.layer_compressor import BaseCompressor
-from sparseml.experimental.sparsegpt.model_preprocessor import (
-    QuantizationModelPreprocessor,
-)
+from sparseml.experimental.sparsegpt.model_preprocessor import QuantizationModelPreprocessor
 from sparseml.experimental.sparsegpt.sequential import SequentialSparseGPT
 from sparseml.experimental.sparsegpt.utils import (
     catch,
     execute_offloaded_module,
-    get_openplatypus,
-    get_wikitext2,
     ppl_eval_general,
+    get_wikitext2,
+    get_openplatypus,
+    get_gsm8k
 )
 
 
@@ -77,14 +76,14 @@ def prepare_sparsegpt(model, dataloader, args, dev) -> SequentialSparseGPT:
     return sequential_sparsegpt
 
 
-def load_model(args):
+def load_model(args, max_seq_len: int = None):
     model = args.model
 
     from transformers import LlamaForCausalLM
 
     model = LlamaForCausalLM.from_pretrained(model, torch_dtype="auto")
     model.eval()
-    seqlen = model.config.max_position_embeddings
+    seqlen = model.config.max_position_embeddings if max_seq_len is None else max_seq_len
     return model, seqlen
 
 
@@ -98,18 +97,14 @@ def load_data(args, seqlen, split=0.1):
         return get_wikitext2(nsamples, seed, seqlen, model)
     elif "platypus" in name:
         return get_openplatypus(nsamples, seed, seqlen, model, split)
+    elif "gsm8k" in name:
+        return get_gsm8k(nsamples, seed, seqlen, model)
 
 
 def cache_attention_inputs(model, data_loader, device, nsamples):
     model.model.embed_tokens.to(device)
     model.model.layers[0].to(device)
-    cached_inputs = catch(
-        model,
-        model.model.layers[0],
-        ["attention_mask", "position_ids"],
-        data_loader,
-        nsamples,
-    )
+    cached_inputs = catch(model, model.model.layers[0], ["attention_mask", "position_ids"], data_loader, nsamples)
     model.model.embed_tokens.cpu()
     model.model.layers[0].cpu()
     torch.cuda.empty_cache()
@@ -148,12 +143,12 @@ def llama2_forward(model, data_loader, device, nsamples=None):
 
 
 def ppl_eval(
-    args,
-    model,
-    dataloader,
-    dev,
-    nsamples=None,
-    max_samples_per_iteration=128,
+        args,
+        model,
+        dataloader,
+        dev,
+        nsamples=None,
+        max_samples_per_iteration=128,
 ):
     return ppl_eval_general(
         llama2_forward,

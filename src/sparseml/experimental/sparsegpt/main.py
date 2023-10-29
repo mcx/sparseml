@@ -17,14 +17,13 @@ import time
 
 import torch
 
+from sparseml.optim.helpers import load_recipe_yaml_str
 from sparseml.experimental.sparsegpt.dispatch import (
-    evaluate_perplexity,
     load_data,
     load_model,
     prepare_sparsegpt,
+    evaluate_perplexity,
 )
-from sparseml.optim.helpers import load_recipe_yaml_str
-
 
 try:
     import wandb
@@ -65,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "dataset",
         type=str,
-        choices=["wikitext2", "ptb", "c4", "open_platypus", "platypus"],
+        choices=["wikitext2", "ptb", "c4", "open_platypus", "platypus", "gsm8k"],
         help="Where to extract calibration data from.",
     )
     parser.add_argument("--data-sequence-length", type=int, default=2048)
@@ -86,8 +85,9 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--ptq-only", action="store_true", help="Flag to perform only PTQ step."
-    )
+        "--ptq-only",
+        action="store_true",
+        help="Flag to perform only PTQ step.")
     parser.add_argument(
         "--ptq-init",
         type=int,
@@ -137,13 +137,10 @@ if __name__ == "__main__":
         "--eval", action="store_true", help="Whether to evaluate perplexity at the end."
     )
     parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda:0",
-        help="Whether to evaluate perplexity at the end.",
+        "--device", type=str, default="cuda:0", help="Whether to evaluate perplexity at the end."
     )
 
-    # For MPT
+   # For MPT
     parser.add_argument(
         "--yaml-path", type=str, default="", help="Path to recipe yaml."
     )
@@ -158,7 +155,11 @@ if __name__ == "__main__":
         wandb.init(config=args)
 
     print("Load model", flush=True)
-    model, seqlen = load_model(args)
+    # Tuan: TODO clean up
+    if args.dataset == "gsm8k":
+        model, seqlen = load_model(args, max_seq_len=1024)
+    else:
+        model, seqlen = load_model(args)
 
     print("Load data", flush=True)
     dataloader, testloader, tokenizer = load_data(args, None, seqlen)
