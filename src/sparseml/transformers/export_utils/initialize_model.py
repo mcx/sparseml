@@ -28,6 +28,7 @@ def initialize_model_for_export(
     trust_remote_code: bool = False,
     **config_args,
 ):
+    # lets also create trainer here but lets not return it
 
     config = initialize_config(model_path, trust_remote_code, **config_args)
     tokenizer = initialize_tokenizer(model_path, sequence_length, task)

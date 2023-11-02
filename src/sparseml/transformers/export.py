@@ -48,6 +48,10 @@ def export_transformer_to_onnx(model_path: Union[str, Path],
     # initialize model to export
     _LOGGER.info("Initializing model for export...")
 
+    # Ben: not for export, but in general
+    # (swapping all the instances where create a model to use
+    # this helper function)
+    # Ben: move checkpoint recipy application to automodelphase
     model = initialize_model_for_export(model_path=model_path,
                                         sequence_length=sequence_length,
                                         task=task,
