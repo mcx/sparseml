@@ -13,7 +13,7 @@ from sparseml.experimental.sparsegpt.llama2 import cache_attention_inputs
 from sparseml.experimental.sparsegpt.utils import execute_offloaded_module
 
 
-MODULE_TYPE = "gate_proj"
+MODULE_TYPE = "down_proj"
 assert MODULE_TYPE in [
     "k_proj",
     "o_proj",
