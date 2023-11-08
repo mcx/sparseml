@@ -1,6 +1,7 @@
 import collections
 import copy
 import os
+from typing import List
 
 import numpy
 import pandas as pd
@@ -24,8 +25,9 @@ assert MODULE_TYPE in [
     "attn_output_matmul",
 ]
 
-PADDING = False
 
+
+SAMPLE_INDICES = [10]
 SEED = 2023
 NSAMPLES = 64
 
@@ -35,22 +37,24 @@ SRC_MODEL_NAME = "llama-2-7b_pruned60"
 model_name_or_path = "/network/tuan/src/neuralmagic/ml-experiments/nlg-text_generation/gsm8k-llama2_7b-oneshot_sparse_finetune_sparsegpt/pruned80/training"
 
 model_name_or_path = "/network/tuan/src/neuralmagic/ml-experiments/nlg-text_generation/gsm8k-llama2_7b-base/dense/training"
+model_name_or_path = "/home/tuan/models/llama/Llama-2-7b-hf"
 
-model_name_or_path = "/network/tuan/models/llama/GSM8K/clip_softmax/Llama-2-7b-hf@gsm8k@lr3e-5@B16@GrAcc1@W0.1@ep2@GPUs4@ClipSM-0.001@ID25986/hf"
-
-model_name_or_path = "/network/tuan/models/llama/GSM8K/clip_softmax/Llama-2-7b-hf@gsm8k@lr3e-5@B16@GrAcc1@W0.1@ep2@GPUs4@ClipSM-0.02@ID29890/hf"
-
-stats_path = os.path.join(model_name_or_path, f"stats_seqlen512_padding{PADDING}")
+stats_path = os.path.join(model_name_or_path, "stats_seqlen512")
 if not os.path.exists(stats_path):
     os.makedirs(stats_path)
 device = "cuda:7"
 
 
-def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
+def get_gsm8k(sample_indices: List[int] = None, nsamples: int = NSAMPLES, seed: int = SEED):
     dataset_train = load_dataset("gsm8k", "main", split="train")
-    numpy.random.seed(seed)
-    rand_indices = numpy.random.randint(len(dataset_train), size=nsamples)
-    dataset_train = dataset_train.select(rand_indices)
+    if sample_indices is not None and len(sample_indices) > 0:
+        print(f"Limitting dataset to indices {sample_indices}\n")
+        dataset_train = dataset_train.select(sample_indices)
+    else:
+        numpy.random.seed(seed)
+        rand_indices = numpy.random.randint(len(dataset_train), size=nsamples)
+        print(f"Randomly select {nsamples} data points")
+        dataset_train = dataset_train.select(rand_indices)
 
     def process_sample(sample):
         IGNORE_INDEX = -100
@@ -64,6 +68,7 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
         )
         prompt = torch.tensor(tokenizer.encode(prompt), dtype=torch.int64)
         example = torch.tensor(tokenizer.encode(example), dtype=torch.int64)
+        import pdb; pdb.set_trace()
         max_seq_len = 512
         if PADDING:
             padding = max_seq_len - example.shape[0]
@@ -73,7 +78,6 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
                 example = example[:max_seq_len]
         else:
             example = example[:max_seq_len]
-
         labels = copy.deepcopy(example)
         labels[: len(prompt)] = -1
         example_mask = example.ge(0)
@@ -83,11 +87,17 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
         example_mask = example_mask.float()
         label_mask = label_mask.float()
 
-        return {
-            "input_ids": example,
-            "labels": labels,
-            "attention_mask": example_mask,
-        }
+        if PADDING:
+            res = {
+                "input_ids": example,
+                "labels": labels,
+                "attention_mask": example_mask,
+            }
+        else:
+            res = {
+                "input_ids": example,
+            }
+        return res
 
     dataset_train = dataset_train.map(
         lambda sample: process_sample(sample),
@@ -98,26 +108,41 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
     return dataset_train
 
 
-def save_stats(name):
-    print(f"Collecting stats {name}...\n")
-    import pdb; pdb.set_trace()
+def save_outlier_stats(name):
+    print(f"Counting outliers {name}...\n")
     abs_data = torch.mean(torch.abs(torch.cat(inputs[name])), 0).cpu().numpy()
-
-    stats_dict = collections.OrderedDict(
+    mean_abs = numpy.mean(abs_data)
+    std_abs = numpy.std(abs_data)
+    delta_abs = numpy.abs(abs_data - mean_abs)
+    outliers = delta_abs > 6 * std_abs
+    outliers_per_token = numpy.sum(outliers, axis=1)
+    outliers_per_feature = numpy.sum(outliers, axis=0)
+    per_token_outliers = collections.OrderedDict(
+        {"module": name}
+    )
+    per_token_outliers.update(collections.OrderedDict(
         {
-            "module": name,
-            "mean_abs": numpy.mean(abs_data),
-            "std_abs": numpy.std(abs_data),
-            "max_abs": numpy.max(abs_data),
-            "q50_abs": numpy.median(abs_data),
-            "q25_abs": numpy.quantile(abs_data, 0.25),
-            "q75_abs": numpy.quantile(abs_data, 0.75),
+            f"token_{k}": outliers_per_token[k] for k in range(len(outliers_per_token))
+        }
+    ))
+    per_feature_outliers = collections.OrderedDict(
+        {"module": name}
+    )
+    per_feature_outliers = collections.OrderedDict(
+        {
+            f"feat_{k}": outliers_per_feature[k] for k in range(len(outliers_per_feature))
         }
     )
 
     del abs_data
+    del mean_abs
+    del std_abs
+    del delta_abs
+    del outliers
+    del outliers_per_token
+    del outliers_per_feature
     torch.cuda.empty_cache()
-    return stats_dict
+    return per_token_outliers, per_feature_outliers
 
 
 def extract_inputs_linear_module(name):
@@ -143,11 +168,22 @@ def extract_inputs_bmm_module(name):
     return tmp
 
 
+def _accumulate_stats(stats, accumulated_stats):
+    if accumulated_stats is None:
+        accumulated_stats = {k: [stats[k]] for k in stats.keys()}
+    else:
+        assert list(accumulated_stats.keys()) == list(stats.keys())
+        for k in accumulated_stats.keys():
+            accumulated_stats[k].append(stats[k])
+    return accumulated_stats
+
+
 def llama2_forward(model, data_loader, device, nsamples=None):
     # Catch attention mask
     cached_inputs = cache_attention_inputs(model, data_loader, device, nsamples)
     buffer = [b[0] for b in cached_inputs.pop("inputs")]
-    stats_dict = None
+    per_token_outliers = None
+    per_feat_outliers = None
     for layer in model.model.layers:
         buffer = execute_offloaded_module(
             layer,
@@ -161,15 +197,12 @@ def llama2_forward(model, data_loader, device, nsamples=None):
         for n in previous_names:
             if n.find(MODULE_TYPE) < 0:
                 continue
-            stats = save_stats(n)
+            per_token, per_feat = save_outlier_stats(n)
             del inputs[n]
             torch.cuda.empty_cache()
-            if stats_dict is None:
-                stats_dict = {k: [stats[k]] for k in stats.keys()}
-            else:
-                assert list(stats_dict.keys()) == list(stats.keys())
-                for k in stats_dict.keys():
-                    stats_dict[k].append(stats[k])
+
+            per_token_outliers = _accumulate_stats(per_token, per_token_outliers)
+            per_feat_outliers = _accumulate_stats(per_feat, per_feat_outliers)
 
     del cached_inputs
     torch.cuda.empty_cache()
@@ -185,14 +218,15 @@ def llama2_forward(model, data_loader, device, nsamples=None):
         device,
     )
 
-    return logits, stats_dict
+    return logits, (per_token_outliers, per_feat_outliers)
+
 
 for MODULE_TYPE in [
     "down_proj",
 ]:
     model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype="auto")
     tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path, torch_dtype="auto")
-
+    import pdb; pdb.set_trace()
     handles = []
     inputs = {}
 
@@ -200,6 +234,8 @@ for MODULE_TYPE in [
         if not name.endswith(MODULE_TYPE):
             continue
         if isinstance(module, torch.nn.Linear):
+            # if name.find("layers.1.") < 0:
+            #     continue
             print(f"Register hook for {name}\n")
             handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
         elif isinstance(module, QuantizableMatMul):
@@ -208,14 +244,18 @@ for MODULE_TYPE in [
 
     model.eval()
 
-    dataset = get_gsm8k()
+    dataset = get_gsm8k(sample_indices=SAMPLE_INDICES, nsamples=NSAMPLES, seed=SEED)
 
     with torch.no_grad():
-        logits, stats_dict = llama2_forward(model, dataset, device)
+        logits, (per_token_outliers, per_feat_outliers) = llama2_forward(model, dataset, device)
 
-    df = pd.DataFrame.from_dict(stats_dict)
-    fname = f"{MODULE_TYPE}_input_tensors.csv" if PADDING else f"{MODULE_TYPE}_input_tensors_no_padding.csv"
-    df.to_csv(os.path.join(stats_path, fname), index=False)
+    assert len(SAMPLE_INDICES) == 1
+    sample_id = SAMPLE_INDICES[0]
+    df = pd.DataFrame.from_dict(per_token_outliers)
+    df.to_csv(os.path.join(stats_path, f"{MODULE_TYPE}_per_token_outliers_sample{sample_id}.csv"), index=False)
+
+    df = pd.DataFrame.from_dict(per_feat_outliers)
+    df.to_csv(os.path.join(stats_path, f"{MODULE_TYPE}_per_feat_outliers_sample{sample_id}.csv"), index=False)
 
     torch.cuda.empty_cache()
     print(f"Done {MODULE_TYPE}")
