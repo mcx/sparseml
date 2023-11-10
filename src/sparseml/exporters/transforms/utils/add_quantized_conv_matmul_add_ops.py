@@ -63,6 +63,11 @@ def add_quantized_conv_matmul_add_ops(
     )
     model.graph.initializer.append(quantized_weight_initializer)
 
+    # If using symmetric and channel-wise quantization all weight
+    # zero-point values are 128 (uint8).
+    # In this case replace array by single scalar.
+    model = _try_convert_zero_point_to_scalar(model, weight_quantize_node)
+
     # Create MatMulInteger/ConvInteger node and add it to graph
     integer_op_node = _create_integer_op_node(
         node,
@@ -134,6 +139,25 @@ def add_quantized_conv_matmul_add_ops(
         node_output_orig=node_output_orig,
     )
     model.graph.node.append(mul_node)
+
+    return model
+
+
+def _try_convert_zero_point_to_scalar(
+    model: ModelProto,
+    node: NodeProto,
+):
+    for zero_point_initializer in model.graph.initializer:
+        if zero_point_initializer.name == node.input[2]:
+            break
+
+    zero_point_array = numpy_helper.to_array(zero_point_initializer)
+    if numpy.unique(zero_point_array).size == 1:
+        model.graph.initializer.remove(zero_point_initializer)
+        new_zero_point_array = numpy_helper.from_array(
+            numpy.unique(zero_point_array).flatten(), name=node.input[2]
+        )
+        model.graph.initializer.append(new_zero_point_array)
 
     return model
 
