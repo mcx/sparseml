@@ -27,7 +27,7 @@ assert MODULE_TYPE in [
 PADDING = False
 
 SEED = 2023
-NSAMPLES = 64
+NSAMPLES = 1319
 
 SRC_MODEL_DIR = "/network/tuan/models/llama/GSM8K/base_finetuned_pruned"
 SRC_MODEL_NAME = "llama-2-7b_pruned60"
@@ -39,11 +39,6 @@ model_name_or_path = "/network/tuan/src/neuralmagic/ml-experiments/nlg-text_gene
 model_name_or_path = "/network/tuan/models/llama/GSM8K/clip_softmax/Llama-2-7b-hf@gsm8k@lr3e-5@B16@GrAcc1@W0.1@ep2@GPUs4@ClipSM-0.001@ID25986/hf"
 
 model_name_or_path = "/network/tuan/models/llama/GSM8K/clip_softmax/Llama-2-7b-hf@gsm8k@lr3e-5@B16@GrAcc1@W0.1@ep2@GPUs4@ClipSM-0.02@ID29890/hf"
-
-stats_path = os.path.join(model_name_or_path, f"stats_seqlen512_padding{PADDING}")
-if not os.path.exists(stats_path):
-    os.makedirs(stats_path)
-device = "cuda:7"
 
 
 def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
@@ -100,7 +95,6 @@ def get_gsm8k(nsamples: int = NSAMPLES, seed: int = SEED):
 
 def save_stats(name):
     print(f"Collecting stats {name}...\n")
-    import pdb; pdb.set_trace()
     abs_data = torch.mean(torch.abs(torch.cat(inputs[name])), 0).cpu().numpy()
 
     stats_dict = collections.OrderedDict(
@@ -116,6 +110,24 @@ def save_stats(name):
     )
 
     del abs_data
+    torch.cuda.empty_cache()
+    return stats_dict
+
+
+def save_stats_v2(name):
+    print(f"Collecting stats {name}...\n")
+    sum_max = 0.0
+    for ss in inputs[name]:
+        m = torch.max(torch.abs(ss))
+        sum_max += m
+    abs_max = sum_max / len(inputs[name])
+    stats_dict = collections.OrderedDict(
+        {
+            "module": name,
+            "avg_max_inf_norm": abs_max.cpu().numpy(),
+        }
+    )
+
     torch.cuda.empty_cache()
     return stats_dict
 
@@ -161,7 +173,7 @@ def llama2_forward(model, data_loader, device, nsamples=None):
         for n in previous_names:
             if n.find(MODULE_TYPE) < 0:
                 continue
-            stats = save_stats(n)
+            stats = save_stats_v2(n)
             del inputs[n]
             torch.cuda.empty_cache()
             if stats_dict is None:
@@ -187,35 +199,50 @@ def llama2_forward(model, data_loader, device, nsamples=None):
 
     return logits, stats_dict
 
-for MODULE_TYPE in [
-    "down_proj",
+root = "/network/tuan/models/llama/GSM8K/clip_softmax"
+
+for f in [
+    "Llama-2-7b-hf@gsm8k@lr3e-5@B16@GrAcc1@W0.1@ep2@GPUs4@ClipSM-0.001@ID25986"
 ]:
-    model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype="auto")
-    tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path, torch_dtype="auto")
 
-    handles = []
-    inputs = {}
+    model_name_or_path = os.path.join(root, f, "hf")
+    print(f"=== {f} ===========\n")
+    stats_path = os.path.join(model_name_or_path, f"stats_seqlen512_padding{PADDING}")
+    if not os.path.exists(stats_path):
+        os.makedirs(stats_path)
+    device = "cuda:7"
 
-    for name, module in model.named_modules():
-        if not name.endswith(MODULE_TYPE):
-            continue
-        if isinstance(module, torch.nn.Linear):
-            print(f"Register hook for {name}\n")
-            handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
-        elif isinstance(module, QuantizableMatMul):
-            print(f"Register hook for QuantizableMatMul {name}\n")
-            handles.append(module.register_forward_hook(extract_inputs_bmm_module(name)))
+    for MODULE_TYPE in [
+        "down_proj",
+    ]:
+        model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype="auto")
+        tokenizer = LlamaTokenizer.from_pretrained(model_name_or_path, torch_dtype="auto")
 
-    model.eval()
+        handles = []
+        inputs = {}
 
-    dataset = get_gsm8k()
+        for name, module in model.named_modules():
+            if not name.endswith(MODULE_TYPE):
+                continue
+            if isinstance(module, torch.nn.Linear):
+                print(f"Register hook for {name}\n")
+                handles.append(module.register_forward_hook(extract_inputs_linear_module(name)))
+            elif isinstance(module, QuantizableMatMul):
+                print(f"Register hook for QuantizableMatMul {name}\n")
+                handles.append(module.register_forward_hook(extract_inputs_bmm_module(name)))
 
-    with torch.no_grad():
-        logits, stats_dict = llama2_forward(model, dataset, device)
+        model.eval()
 
-    df = pd.DataFrame.from_dict(stats_dict)
-    fname = f"{MODULE_TYPE}_input_tensors.csv" if PADDING else f"{MODULE_TYPE}_input_tensors_no_padding.csv"
-    df.to_csv(os.path.join(stats_path, fname), index=False)
+        dataset = get_gsm8k()
 
-    torch.cuda.empty_cache()
-    print(f"Done {MODULE_TYPE}")
+        with torch.no_grad():
+            logits, stats_dict = llama2_forward(model, dataset, device)
+
+        df = pd.DataFrame.from_dict(stats_dict)
+        fname = f"{MODULE_TYPE}_input_tensors.csv" if PADDING else f"{MODULE_TYPE}_input_tensors_no_padding.csv"
+        df.to_csv(os.path.join(stats_path, fname), index=False)
+
+        model = None
+        tokenizer = None
+        torch.cuda.empty_cache()
+        print(f"Done {MODULE_TYPE}")
