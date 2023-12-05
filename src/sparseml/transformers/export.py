@@ -40,8 +40,9 @@ optional arguments:
                         Path to directory where model files for weights,
                         config, and tokenizer are stored
   --sequence_length SEQUENCE_LENGTH
-                        Sequence length to use. Default is 384. Can be
-                        overwritten later
+                        Sequence length to use. Default is
+                        `config.max_position_embeddings`. Can be overwritten
+                        later
   --no_convert_qat      Set flag to not perform QAT to fully quantized
                         conversion after export
   --finetuning_task FINETUNING_TASK
@@ -84,6 +85,7 @@ from transformers import TrainingArguments as HFTrainingArgs
 from transformers.tokenization_utils_base import PaddingStrategy
 
 from sparseml.optim import parse_recipe_variables
+from sparseml.pytorch.opset import TORCH_DEFAULT_ONNX_OPSET
 from sparseml.pytorch.optim import ScheduledModifierManager
 from sparseml.pytorch.utils import export_onnx
 from sparseml.transformers.sparsification import Trainer
@@ -101,7 +103,7 @@ MANDATORY_DEPLOYMENT_FILES = [
 ]
 OPT_TOKENIZER_FILES = ["special_tokens_map.json", "vocab.json", "merges.txt"]
 
-OPTIONAL_DEPLOYMENT_FILES: List[str] = ["tokenizer.json"]
+OPTIONAL_DEPLOYMENT_FILES: List[str] = ["tokenizer.json", "tokenizer.model"]
 OPTIONAL_DEPLOYMENT_FILES.append(EXTERNAL_ONNX_DATA_NAME)
 OPTIONAL_DEPLOYMENT_FILES.extend(OPT_TOKENIZER_FILES)
 
@@ -237,7 +239,7 @@ def load_task_dataset(
 def export_transformer_to_onnx(
     task: str,
     model_path: str,
-    sequence_length: int = 384,
+    sequence_length: Optional[int] = None,
     convert_qat: bool = True,
     finetuning_task: Optional[str] = None,
     onnx_file_name: str = MODEL_ONNX_NAME,
@@ -245,6 +247,7 @@ def export_transformer_to_onnx(
     trust_remote_code: bool = False,
     data_args: Optional[Union[Dict[str, Any], str]] = None,
     one_shot: Optional[str] = None,
+    opset: int = TORCH_DEFAULT_ONNX_OPSET,
 ) -> str:
     """
     Exports the saved transformers file to ONNX at batch size 1 using
@@ -266,6 +269,7 @@ def export_transformer_to_onnx(
     :param data_args: additional args to instantiate a `DataTrainingArguments`
         instance for exporting samples
     :param one_shot: one shot recipe to be applied before exporting model
+    :param opset: ONNX opset to export with
     :return: path to the exported ONNX file
     """
     task = task.replace("_", "-").replace(" ", "-")
@@ -291,6 +295,13 @@ def export_transformer_to_onnx(
         trust_remote_code=trust_remote_code,
         **config_args,
     )
+
+    if sequence_length is None:
+        _LOGGER.info(
+            f"Using default sequence length of {config.max_position_embeddings}"
+        )
+        sequence_length = config.max_position_embeddings
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_path, model_max_length=sequence_length
     )
@@ -325,8 +336,16 @@ def export_transformer_to_onnx(
         recipe_args=None,
         teacher=None,
     )
-
-    applied = trainer.apply_manager(epoch=math.inf, checkpoint=None)
+    try:
+        applied = trainer.apply_manager(epoch=math.inf, checkpoint=None)
+    except ValueError as e:
+        raise ValueError(
+            f"Failed to apply the recipe to the "
+            f"model with the exception message:\n{e}\n"
+            "It is possible, that there are missing modules "
+            "specific to the model, that were not properly loaded. "
+            "A possible solution would be setting the --trust_remote_code flag"
+        )
 
     if not applied:
         _LOGGER.warning(
@@ -398,6 +417,7 @@ def export_transformer_to_onnx(
         inputs,
         onnx_file_path,
         convert_qat=convert_qat,
+        opset=opset,
         **kwargs,
     )
     _LOGGER.info(f"ONNX exported to {onnx_file_path}")
@@ -510,8 +530,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sequence_length",
         type=int,
-        default=384,
-        help="Sequence length to use. Default is 384. Can be overwritten later",
+        default=None,
+        help=(
+            "Sequence length to use. Default is `config.max_position_embeddings`. "
+            "Can be overwritten later"
+        ),
     )
     parser.add_argument(
         "--no_convert_qat",
@@ -562,6 +585,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help=("Set flag to allow custom models in HF-transformers"),
     )
+    parser.add_argument(
+        "--opset",
+        type=int,
+        default=TORCH_DEFAULT_ONNX_OPSET,
+        help=f"ONNX opset to export with, default: {TORCH_DEFAULT_ONNX_OPSET}",
+    )
 
     return parser.parse_args()
 
@@ -569,7 +598,7 @@ def _parse_args() -> argparse.Namespace:
 def export(
     task: str,
     model_path: str,
-    sequence_length: int,
+    sequence_length: Optional[int],
     no_convert_qat: bool,
     finetuning_task: str,
     onnx_file_name: str,
@@ -577,6 +606,7 @@ def export(
     trust_remote_code: bool = False,
     data_args: Optional[str] = None,
     one_shot: Optional[str] = None,
+    opset: int = TORCH_DEFAULT_ONNX_OPSET,
 ):
     if os.path.exists(model_path):
         # expand to absolute path to support downstream logic
@@ -592,6 +622,7 @@ def export(
         trust_remote_code=trust_remote_code,
         data_args=data_args,
         one_shot=one_shot,
+        opset=opset,
     )
 
     deployment_folder_dir = create_deployment_folder(
@@ -616,6 +647,7 @@ def main():
         trust_remote_code=args.trust_remote_code,
         data_args=args.data_args,
         one_shot=args.one_shot,
+        opset=args.opset,
     )
 
 

@@ -26,6 +26,9 @@ from sparseml.exporters.transforms.kv_cache.transforms_codegen import (
 from sparseml.exporters.transforms.kv_cache.transforms_llama import (
     AdditionalTransformsLLAMA,
 )
+from sparseml.exporters.transforms.kv_cache.transforms_mpt import (
+    AdditionalTransformsMPT,
+)
 from sparseml.exporters.transforms.kv_cache.transforms_opt import (
     AdditionalTransformsOPT,
 )
@@ -105,6 +108,20 @@ CODEGEN_CONFIG = KeyValueCacheConfig(
     multiply_batch_by_num_att_heads=False,
 )
 
+# the injection config for MPT config is compatible
+# with the MPT model in HF Space 'mosaicml/mpt-7b'
+# at the state corresponding to the commit
+# `68e1a8e0ebb9b30f3c45c1ef6195980f29063ae2`
+MPT_CONFIG = KeyValueCacheConfig(
+    model_name="mpt",
+    additional_transforms=AdditionalTransformsMPT,
+    key_num_attention_heads="n_heads",
+    key_num_embedding_hidden_size="d_model",
+    transpose_value_input=(0, 2, 1, 3),
+    transpose_key_input=(0, 2, 1, 3),
+    multiply_batch_by_num_att_heads=False,
+)
+
 BLOOM_CONFIG = KeyValueCacheConfig(
     model_name="bloom",
     additional_transforms=None,
@@ -125,6 +142,34 @@ LLAMA_CONFIG = KeyValueCacheConfig(
     multiply_batch_by_num_att_heads=False,
 )
 
+# Mistral has a config/model definition "MistralForCausalLM" but is based off Llama2.
+# It contains these additions to Llama2-7b:
+# * Sliding Window Attention
+# * GQA (Grouped Query Attention)
+# * Byte-fallback BPE tokenizer
+MISTRAL_CONFIG = KeyValueCacheConfig(
+    model_name="mistral",
+    additional_transforms=AdditionalTransformsLLAMA,
+    key_num_attention_heads="num_attention_heads",
+    key_num_embedding_hidden_size="hidden_size",
+    transpose_value_input=None,
+    transpose_key_input=None,
+    multiply_batch_by_num_att_heads=False,
+)
+
+# Reusing the CodeGen transforms because it happens to match what we need for GPTNeo
+additional_transforms_gpt_neo = AdditionalTransformsCodeGen
+
+GPT_NEO_CONFIG = KeyValueCacheConfig(
+    model_name="gpt_neo",
+    additional_transforms=additional_transforms_gpt_neo,
+    key_num_attention_heads="num_heads",
+    key_num_embedding_hidden_size="hidden_size",
+    transpose_value_input=(0, 2, 1, 3),
+    transpose_key_input=None,
+    multiply_batch_by_num_att_heads=False,
+)
+
 
 def get_kv_cache_config(
     model_path: str,
@@ -132,7 +177,10 @@ def get_kv_cache_config(
         OPT_CONFIG,
         CODEGEN_CONFIG,
         BLOOM_CONFIG,
+        MPT_CONFIG,
         LLAMA_CONFIG,
+        MISTRAL_CONFIG,
+        GPT_NEO_CONFIG,
     ],
 ) -> KeyValueCacheConfig:
     """
@@ -175,7 +223,54 @@ def get_kv_cache_config(
     kv_cache_config.num_attention_heads = num_attention_heads
     kv_cache_config.hidden_size_kv_cache = hidden_size_kv_cache
 
+    kv_cache_config = adapt_cache_structure_for_gqa(
+        kv_cache_config, transformers_config
+    )
+
     _LOGGER.info("Properly configured arguments for KV Cache Transformation")
+    return kv_cache_config
+
+
+def adapt_cache_structure_for_gqa(
+    kv_cache_config: KeyValueCacheConfig,
+    transformers_config: Dict[str, Any],
+    model_names: List[str] = ["llama"],
+) -> KeyValueCacheConfig:
+    """
+    Potentially adapts the kv_cache_config, so that it
+    properly works with Grouped Query Attention (GQA).
+
+    For now, this function only supports the llama model.
+    Llama uses:
+    Multi Head Attention (MHA) if `num_key_value_heads==num_attention_heads` (default),
+    Grouped Query Attention (GQA) if `num_key_value_heads<num_attention_heads`,
+    Multi Query Attention (MQA) if `num_key_value_heads==1`,
+
+    :param kv_cache_config: The kv cache config for the model.
+    :param transformers_config: The transformers config for
+        the model. If contains the key:`num_key_value_heads`,
+        the model may be potentially using GQA instead of
+        MHA and thus the kv_cache_config needs to be adapted.
+    :param model_names: The list of model names that may use
+        GQA instead of MQA.
+    :return: Potentially adapted kv cache config for the model.
+        If the model does not use GQA, the kv_cache_config is
+        returned unchanged.
+    """
+    # For now, we only support GQA for LLAMA.
+    model_name = kv_cache_config.model_name
+    num_attention_heads = kv_cache_config.num_attention_heads
+    num_key_value_heads = transformers_config.get("num_key_value_heads")
+
+    if num_key_value_heads is not None and model_name in model_names:
+        if num_key_value_heads > 1 and num_key_value_heads != num_attention_heads:
+            # introduce the modification the config to support GQA for LLAMA.
+            kv_cache_config.transpose_value_input = None
+
+            _LOGGER.info(
+                f"Adapted the model: {transformers_config['model_type']} "
+                f"to work with GQA."
+            )
     return kv_cache_config
 
 

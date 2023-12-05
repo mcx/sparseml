@@ -362,9 +362,9 @@ class ModuleExporter(object):
         :param exp_counter: the counter to start exporting the tensor files at
         """
         sample_batches = [tensors_to_device(batch, "cpu") for batch in sample_batches]
-        inputs_dir = os.path.join(self._output_dir, "sample_inputs")
-        outputs_dir = os.path.join(self._output_dir, "sample_outputs")
-        labels_dir = os.path.join(self._output_dir, "sample_labels")
+        inputs_dir = os.path.join(self._output_dir, "sample-inputs")
+        outputs_dir = os.path.join(self._output_dir, "sample-outputs")
+        labels_dir = os.path.join(self._output_dir, "sample-labels")
         originals_dir = os.path.join(self._output_dir, "sample_originals")
 
         with torch.no_grad():
@@ -460,7 +460,7 @@ def export_onnx(
         https://pytorch.org/docs/stable/onnx.html
     """
     if _PARSED_TORCH_VERSION >= version.parse("1.10.0") and opset < 13 and convert_qat:
-        warnings.warn(
+        raise ValueError(
             "Exporting onnx with QAT and opset < 13 may result in errors. "
             "Please use opset>=13 with QAT. "
             "See https://github.com/pytorch/pytorch/issues/77455 for more info. "
@@ -585,8 +585,13 @@ def export_onnx(
             module.export_with_qlinearconv
         )
 
+        use_qlinear_matmul = hasattr(module, "export_with_qlinearmatmul") and (
+            module.export_with_qlinearmatmul
+        )
+
         exporter = ONNXToDeepsparse(
             use_qlinear_conv=use_qlinear_conv,
+            use_qlinear_matmul=use_qlinear_matmul,
             skip_input_quantize=skip_input_quantize,
         )
         exporter.export(pre_transforms_model=file_path, file_path=file_path)

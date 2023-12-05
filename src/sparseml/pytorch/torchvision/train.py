@@ -68,6 +68,18 @@ from sparsezoo import Model
 _LOGGER = logging.getLogger(__name__)
 
 
+def create_grad_sampler_loader(
+    train_dataset, num_workers=16, grad_sampler_batch_size=10
+):
+    return DataLoader(
+        train_dataset,
+        batch_size=grad_sampler_batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=num_workers,
+    )
+
+
 def train_one_epoch(
     model: torch.nn.Module,
     criterion: torch.nn.Module,
@@ -101,7 +113,7 @@ def train_one_epoch(
     optimizer.zero_grad()
 
     header = f"Epoch: [{epoch}]"
-    for (image, target) in metric_logger.log_every(
+    for image, target in metric_logger.log_every(
         data_loader, args.logging_steps * accum_steps, header
     ):
         start_time = time.time()
@@ -400,31 +412,28 @@ def main(args):
     )
 
     _LOGGER.info("Creating model")
-    local_rank = args.local_rank if args.distributed else None
-    model, arch_key, maybe_dp_device = _create_model(
+    local_rank = int(os.environ["LOCAL_RANK"]) if args.distributed else None
+    model, arch_key = _create_model(
         arch_key=args.arch_key,
         local_rank=local_rank,
         pretrained=args.pretrained,
         checkpoint_path=args.checkpoint_path,
         pretrained_dataset=args.pretrained_dataset,
-        device=device,
         num_classes=num_classes,
     )
 
     if args.distill_teacher not in ["self", "disable", None]:
         _LOGGER.info("Instantiating teacher")
-        distill_teacher, _, _ = _create_model(
+        distill_teacher, _ = _create_model(
             arch_key=args.teacher_arch_key,
             local_rank=local_rank,
             pretrained=True,  # teacher is always pretrained
             pretrained_dataset=args.pretrained_teacher_dataset,
             checkpoint_path=args.distill_teacher,
-            device=device,
             num_classes=num_classes,
         )
     else:
         distill_teacher = args.distill_teacher
-    device = maybe_dp_device
 
     if args.distributed and args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -507,7 +516,7 @@ def main(args):
         alpha = 1.0 - args.model_ema_decay
         alpha = min(1.0, alpha * adjust)
         model_ema = utils.ExponentialMovingAverage(
-            model, device=device, decay=1.0 - alpha
+            model, device=model.device, decay=1.0 - alpha
         )
 
     manager = checkpoint_manager = None
@@ -628,12 +637,29 @@ def main(args):
                 f"{tag}/{metric_name}", smoothed_value.global_avg, step=step
             )
 
+    recipe_kwargs = {}
+    # TODO: What is the right logic to check if we need a grad sampler here? It seems
+    # that for YOLO the grad sampler is always created, whether or not it's needed. See
+    # https://github.com/neuralmagic/sparseml/blob/b73a173ff89c3bb524dcc0a1f7a16a3109a234a1/src/sparseml/yolov8/trainers.py#L699
+    grad_sampler_loader = create_grad_sampler_loader(dataset)
+
+    def data_loader_builder(**kwargs):
+        while True:
+            for input, target in grad_sampler_loader:
+                input, target = input.to(device).float(), target.to(device)
+                yield [input], {}, target
+
+    recipe_kwargs["grad_sampler"] = {
+        "data_loader_builder": data_loader_builder,
+        "loss_function": criterion,
+    }
     if manager is not None:
         manager.initialize(
             model,
             epoch=args.start_epoch,
             loggers=logger,
             distillation_teacher=distill_teacher,
+            **recipe_kwargs,
         )
         step_wrapper = manager.modify(
             model,
@@ -641,6 +667,7 @@ def main(args):
             steps_per_epoch=steps_per_epoch,
             epoch=args.start_epoch,
             wrap_optim=scaler,
+            **recipe_kwargs,
         )
         if scaler is None:
             optimizer = step_wrapper
@@ -651,9 +678,18 @@ def main(args):
         args, optimizer, checkpoint=checkpoint, manager=manager
     )
 
+    if args.distributed:
+        ddp = True
+        device = local_rank
+    else:
+        ddp = False
+
+    model, device, _ = model_to_device(model, device, ddp)
+    if distill_teacher is not None:
+        distill_teacher, _, _ = model_to_device(distill_teacher, device, ddp)
+
     model_without_ddp = model
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
     best_top1_acc = -math.inf
@@ -760,7 +796,6 @@ def _create_model(
     pretrained: Optional[bool] = False,
     checkpoint_path: Optional[str] = None,
     pretrained_dataset: Optional[str] = None,
-    device=None,
     num_classes=None,
 ):
     if not arch_key or arch_key in ModelRegistry.available_keys():
@@ -811,17 +846,7 @@ def _create_model(
         raise ValueError(
             f"Unable to find {arch_key} in ModelRegistry or in torchvision.models"
         )
-    ddp = False
-    if local_rank is not None:
-        torch.cuda.set_device(local_rank)
-        device = local_rank
-        ddp = True
-    model, device, _ = model_to_device(
-        model=model,
-        device=device,
-        ddp=ddp,
-    )
-    return model, arch_key, device
+    return model, arch_key
 
 
 def _get_lr_scheduler(args, optimizer, checkpoint=None, manager=None):
@@ -1255,14 +1280,6 @@ def _deprecate_old_arguments(f):
         "RGB standard-deviation values used to normalize input RGB values; "
         "Note: Will use ImageNet values if not specified."
     ),
-)
-@click.option(
-    "--local_rank",
-    "--local-rank",
-    type=int,
-    default=None,
-    help="Local rank for distributed training",
-    hidden=True,  # should not be modified by user
 )
 @click.pass_context
 def cli(ctx, **kwargs):
