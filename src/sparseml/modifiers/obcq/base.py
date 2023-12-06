@@ -55,6 +55,9 @@ class SparseGPTModifier(Modifier):
     """
 
     sparsity: Union[float, List[float]]
+    sparsity_profile: Optional[str] = None
+    owl_m: Optional[int] = None
+    owl_lmbda: Optional[float] = None
     block_size: int
     quantize: Union[bool, Dict]
     dampening_frac: Optional[float] = 0.01
