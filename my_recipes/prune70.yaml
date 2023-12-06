@@ -1,7 +1,7 @@
 test_stage:
   obcq_modifiers:
     SparseGPTModifier:
-      sparsity: 0.5
+      sparsity: 0.7
       block_size: 128
       sequential_update: False
       quantize: False

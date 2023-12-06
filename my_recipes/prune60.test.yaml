@@ -1,0 +1,12 @@
+test_stage:
+  obcq_modifiers:
+    SparseGPTModifier:
+      sparsity: 0.6
+      block_size: 128
+      sequential_update: False
+      quantize: False
+      percdamp: 0.01
+      mask_structure: "0:0"
+      targets: [
+        "model.layers.0",
+      ]
