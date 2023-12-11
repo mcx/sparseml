@@ -14,11 +14,11 @@ DST_MODEL_DIR=$MODEL_DIR/pruned
 
 SP=50
 
-for M in 5
+for M in 7
 do
-for LMBDA in 0.02 0.05 0.08 0.1 0.2
+for LMBDA in 0.02 0.05 0.08
 do
-for NSAMPLES in 1024
+for NSAMPLES in 2048
 do
 
 ID=$RANDOM

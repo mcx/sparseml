@@ -1,0 +1,74 @@
+test_stage:
+  obcq_modifiers:
+    LogarithmicEqualizationModifier:
+      mappings: [
+        [["re:.*q_proj", "re:.*k_proj", "re:.*v_proj"], "re:.*input_layernorm"],
+        [["re:.*gate_proj", "re:.*up_proj"], "re:.*post_attention_layernorm"],
+        [["re:.*down_proj"], "re:.*up_proj"],
+      ]
+    QuantizationModifier:
+      ignore:
+        - LlamaRotaryEmbedding
+        - LlamaRMSNorm
+        - SiLUActivation
+        - MatMulLeftInput_QK
+        - MatMulLeftInput_PV
+        - MatMulRightInput_QK
+        - MatMulRightInput_PV
+        - MatMulOutput_QK
+        - MatMulOutput_PV
+      post_oneshot_calibration: true
+      scheme_overrides:
+        Linear:
+          weights:
+            num_bits: 8
+            symmetric: true
+            strategy: channel
+        Embedding:
+          input_activations: null
+          weights:
+            num_bits: 8
+            symmetric: false
+    SparseGPTModifier:
+      sparsity: 0.0
+      block_size: 128
+      sequential_update: false
+      quantize: true
+      percdamp: 0.01
+      prunen: 0
+      prunem: 0
+      targets: [
+        "model.layers.0",
+        "model.layers.1",
+        "model.layers.2",
+        "model.layers.3",
+        "model.layers.4",
+        "model.layers.5",
+        "model.layers.6",
+        "model.layers.7",
+        "model.layers.8",
+        "model.layers.9",
+        "model.layers.10",
+        "model.layers.11",
+        "model.layers.12",
+        "model.layers.13",
+        "model.layers.14",
+        "model.layers.15",
+        "model.layers.16",
+        "model.layers.17",
+        "model.layers.18",
+        "model.layers.19",
+        "model.layers.20",
+        "model.layers.21",
+        "model.layers.22",
+        "model.layers.23",
+        "model.layers.24",
+        "model.layers.25",
+        "model.layers.26",
+        "model.layers.27",
+        "model.layers.28",
+        "model.layers.29",
+        "model.layers.30",
+        "model.layers.31",
+        "lm_head",
+      ]
