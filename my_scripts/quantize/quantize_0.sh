@@ -12,9 +12,9 @@ SRC_MODEL=$MODEL_DIR/Llama-2-7b-hf@trivia_qa@lr3e-5@B64@GrAcc1@W0.1@ep2@GPUs4@WD
 
 DST_MODEL_DIR=$MODEL_DIR/quantized
 
-RECIPE_NAME=dense_w8_loge_smooth
+RECIPE_NAME=dense_w8a8_loge_smooth
 
-for NSAMPLES in 2
+for NSAMPLES in 1024
 do
 
 ID=$RANDOM

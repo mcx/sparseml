@@ -1,6 +1,7 @@
 test_stage:
   obcq_modifiers:
-    LogarithmicEqualizationModifier:
+    SmoothQuantModifier:
+      smoothing_strength: 0.9
       mappings: [
         [["re:.*q_proj", "re:.*k_proj", "re:.*v_proj"], "re:.*input_layernorm"],
         [["re:.*gate_proj", "re:.*up_proj"], "re:.*post_attention_layernorm"],
@@ -20,6 +21,7 @@ test_stage:
       post_oneshot_calibration: true
       scheme_overrides:
         Linear:
+          input_activations: null
           weights:
             num_bits: 8
             symmetric: true

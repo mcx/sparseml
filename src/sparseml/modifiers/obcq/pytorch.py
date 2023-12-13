@@ -85,7 +85,7 @@ class SparseGPTModifierPyTorch(SparseGPTModifier):
         self.model = self.model.model
         self._set_device(device)
         self._infer_mask_block_size()
-        if self.sparsity_profile.lower() == "owl":
+        if self.sparsity_profile is not None and self.sparsity_profile.lower() == "owl":
             self.sparsity = self._infer_layer_sparsity(dataloader, device)
         self._validate_layerwise_sparsity()
 
