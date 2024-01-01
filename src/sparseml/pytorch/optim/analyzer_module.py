@@ -54,6 +54,10 @@ from torch.utils.hooks import RemovableHandle
 from sparseml.optim import AnalyzedLayerDesc
 from sparseml.pytorch.utils import get_layer, get_prunable_layers
 
+# `from sparseml.pytorch.sparsification.pruning import (
+#                PowerpropagationWrapper,
+#                )
+
 
 __all__ = ["ModuleAnalyzer"]
 
@@ -454,6 +458,10 @@ class ModuleAnalyzer(object):
 
     @staticmethod
     def _mod_desc(mod: Module) -> AnalyzedLayerDesc:
+        #if isinstance(mod, PowerpropagationWrapper):
+        if hasattr(mod, "layer"):
+            #print("!!!!!!!!!!!!!!!This is a PP wrapper") 
+            return(ModuleAnalyzer._mod_desc(mod.layer))
         child_descs = []
         for _, child in mod.named_children():
             if child != mod:

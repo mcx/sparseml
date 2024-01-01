@@ -274,6 +274,8 @@ class TopKASTPruningModifier(BasePruningModifier):
             self._module_masks.pruning_end(leave_enabled=self._leave_enabled)
             self._grad_module_masks.pruning_end(leave_enabled=False)
 
+        print("!!!!!!!!!!! Running top-kast, started status is ", started)
+
     def finalize(self, module: Optional[Module] = None, reset_loggers: bool = True):
         """
         Cleans up any remaining hooks
@@ -402,6 +404,8 @@ class TopKASTPruningModifier(BasePruningModifier):
             (calculate batch number using this and epoch)
         """
         super().optimizer_pre_step(module, optimizer, epoch, steps_per_epoch)
+        if not self.started:
+            return
 
         lr = optimizer.state_dict()["param_groups"][0]["lr"]
         with torch.no_grad():

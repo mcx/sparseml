@@ -39,6 +39,8 @@ from sparseml.pytorch.utils import (
 from sparseml.pytorch.utils.logger import LoggerManager
 from sparseml.utils import ALL_PRUNABLE_TOKEN, ALL_TOKEN, validate_str_iterable
 
+from functools import partial
+
 
 __all__ = [
     "PowerpropagationModifier",
@@ -48,6 +50,23 @@ __all__ = [
 
 _LOGGER = logging.getLogger(__name__)
 
+def new_forward_conv(self, x, alpha=1.0):
+    #weight = self.weight * torch.pow(torch.abs(self.weight), alpha - 1)
+    return F.conv2d(
+        x,
+        torch.nan_to_num(self.weight * torch.pow(torch.abs(self.weight), alpha-1), 0),
+        self.bias,
+        self.stride,
+        self.padding,
+        self.dilation,
+        self.groups,
+    )
+
+def new_forward_linear(self, x, alpha=1.0):
+    #weight = self.weight * torch.pow(torch.abs(self.weight), alpha - 1)
+    return F.linear(x,
+                    torch.nan_to_num(self.weight * torch.pow(torch.abs(self.weight), alpha-1), 0),
+                    self.bias)
 
 class PowerpropagationWrapper(Module):
     def __init__(self, layer: Module, alpha: float = 1.0):
@@ -62,26 +81,44 @@ class PowerpropagationWrapper(Module):
         # the layer weights.
         self.register_buffer("alpha", torch.tensor(1.0, requires_grad=False))
         self.set_alpha(alpha)
-
-    def forward(self, x):
-        weight = self.layer.weight * torch.pow(torch.abs(self.layer.weight), self.alpha - 1)
+        self._analyzed_layer_desc = "PP wrapper"
 
         if isinstance(self.layer, Conv2d):
-            return F.conv2d(
-                x,
-                weight,
-                self.layer.bias,
-                self.layer.stride,
-                self.layer.padding,
-                self.layer.dilation,
-                self.layer.groups,
-            )
+            self.layer.forward = partial(new_forward_conv, self.layer)
         elif isinstance(self.layer, Linear):
-            return F.linear(x, weight, self.layer.bias)
+            self.layer.forward = partial(new_forward_linear, self.layer)
         else:
             raise ValueError(
-                "Powerpropagation only works with Linear and Conv2d layers"
+                f"Powerpropagation only works with Linear and Conv2d layers {self.layer.__class__}"
             )
+
+
+
+    def forward(self, x):
+        return self.layer(x, self.alpha)
+        # weight = self.layer.weight * torch.pow(torch.abs(self.layer.weight), self.alpha - 1)
+        # weight = self.layer.weight
+
+        # self.layer(x)
+
+        # if isinstance(self.layer, Conv2d):
+        #     return F.conv2d(
+        #         x,
+        #         weight,
+        #         self.layer.bias,
+        #         self.layer.stride,
+        #         self.layer.padding,
+        #         self.layer.dilation,
+        #         self.layer.groups,
+        #     )
+        # elif isinstance(self.layer, Linear):
+        #     return F.linear(x, weight, self.layer.bias)
+        # else:
+        #     raise ValueError(
+        #         "Powerpropagation only works with Linear and Conv2d layers"
+        #     )
+
+
 
     def set_alpha(self, new_alpha):
         with torch.no_grad():
@@ -89,7 +126,9 @@ class PowerpropagationWrapper(Module):
             # If there were any zeros in the weights, these may now be nan,
             # depending on the old and new values of alpha.
             self.layer.weight.data = torch.nan_to_num(self.layer.weight.data, 0.00000001)
+            self.layer
             self.alpha = torch.tensor(float(new_alpha))
+            
 
 
 @PyTorchModifierYAML()
