@@ -16,5 +16,6 @@
 
 from .base import TextGenerationDataset
 from .c4 import C4Dataset
+from .cnn_dailymail import CNNDailyMailDataset
 from .open_platypus import OpenPlatypusDataset
 from .wikitext import WikiTextDataset
