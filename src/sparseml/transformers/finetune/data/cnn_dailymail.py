@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from copy import deepcopy
-import numpy as np
 from typing import Optional
+
+import numpy as np
 
 from sparseml.transformers.finetune.data import TextGenerationDataset
 from sparseml.transformers.finetune.data.data_helpers import get_raw_dataset
@@ -28,7 +29,10 @@ class CNNDailyMailDataset(TextGenerationDataset):
     :param split: split from dataset to load, for instance `test` or `train[:5%]`
     :param tokenizer: tokenizer to use on dataset
     """
-    _collect_statistics = True
+
+    # Turn the following on to print out statistics of tokenized datasets
+    _collect_statistics = False
+
     SAMPLE_TEMPLATE = "Article:\n{article}\n\n### Summarization:\n{highlights}\n"
 
     def __init__(self, data_args, split, tokenizer):
@@ -50,7 +54,6 @@ class CNNDailyMailDataset(TextGenerationDataset):
             self.data_args, cache_dir, split=self.split, **self.raw_kwargs
         )
 
-        # helper fn for restructuring each dataset entry using the alpaca template
         def restructure_fn(sample):
             sample["text"] = self.SAMPLE_TEMPLATE.format(
                 article=sample["article"], highlights=sample["highlights"]
@@ -72,8 +75,6 @@ class CNNDailyMailDataset(TextGenerationDataset):
                 result = self.tokenizer(
                     data[self.text_column],
                     padding=False,
-                    #max_length=self.tokenizer.model_max_length,
-                    #truncation=True,
                 )
                 return result
 
@@ -94,6 +95,5 @@ class CNNDailyMailDataset(TextGenerationDataset):
                 print(f"Std: {np.std(len_arr)}\n")
                 per = np.percentile(len_arr, [50, 60, 70, 80, 90, 95, 99])
                 print(f"Percentile (50->90, 95, 99): {per}\n")
-            import pdb; pdb.set_trace()
-        return raw_dataset
 
+        return raw_dataset
