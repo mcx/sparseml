@@ -177,6 +177,7 @@ def main(
         "cache_dir": model_args.cache_dir,
         "use_auth_token": True if model_args.use_auth_token else None,
     }
+
     # this calls from_pretrained under the hood so should be FSDP safe
     model, teacher = SparseAutoModel.text_generation_from_pretrained_distil(
         model_name_or_path=model_path,

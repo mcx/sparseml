@@ -13,7 +13,7 @@ MAX_LEN=1024  # testing
 #DATASET=open_platypus
 
 SRC_MODEL_NAME=Llama-2-7b-hf
-SRC_MODEL=/network/tuan/models/llama/$SRC_MODEL_NAME
+SRC_MODEL=$HOME/models/llama/$SRC_MODEL_NAME
 
 RECIPE_DIR=$ROOT/my_recipes
 FSDP_CONFIG=$RECIPE_DIR/fsdp.yaml

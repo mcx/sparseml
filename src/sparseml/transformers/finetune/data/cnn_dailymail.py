@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from copy import deepcopy
+import numpy as np
 from typing import Optional
 
 from sparseml.transformers.finetune.data import TextGenerationDataset
@@ -27,8 +28,8 @@ class CNNDailyMailDataset(TextGenerationDataset):
     :param split: split from dataset to load, for instance `test` or `train[:5%]`
     :param tokenizer: tokenizer to use on dataset
     """
-
-    SAMPLE_TEMPLATE = "Summarize the following article:\n\n### Article:\n{article}\n\n### Summarization:\n{highlights}\n"
+    _collect_statistics = True
+    SAMPLE_TEMPLATE = "Article:\n{article}\n\n### Summarization:\n{highlights}\n"
 
     def __init__(self, data_args, split, tokenizer):
         data_args = deepcopy(data_args)
@@ -45,7 +46,6 @@ class CNNDailyMailDataset(TextGenerationDataset):
         :param cache_dir: disk location to search for cached dataset
         :return: the requested dataset
         """
-        import pdb; pdb.set_trace()
         raw_dataset = get_raw_dataset(
             self.data_args, cache_dir, split=self.split, **self.raw_kwargs
         )
@@ -65,4 +65,35 @@ class CNNDailyMailDataset(TextGenerationDataset):
             load_from_cache_file=not self.data_args.overwrite_cache,
             desc=f"Restructuring CNN/DailyMail Dataset for the {self.split} split",
         )
+
+        if self._collect_statistics:
+
+            def tokenize_fn(data):
+                result = self.tokenizer(
+                    data[self.text_column],
+                    padding=False,
+                    #max_length=self.tokenizer.model_max_length,
+                    #truncation=True,
+                )
+                return result
+
+            tokenized_dataset = raw_dataset.map(
+                tokenize_fn,
+                batched=False,
+                num_proc=self.data_args.preprocessing_num_workers,
+                load_from_cache_file=not self.data_args.overwrite_cache,
+                desc="Running tokenizer on dataset to collect statistics",
+            )
+            for split in tokenized_dataset.keys():
+                ds = tokenized_dataset[split]
+                print(f"Statistics for {split} split:\n")
+                len_arr = np.array([len(ds[i]["input_ids"]) for i in range(len(ds))])
+                print(f"Min: {np.min(len_arr)}\n")
+                print(f"Max: {np.max(len_arr)}\n")
+                print(f"Avg: {np.mean(len_arr)}\n")
+                print(f"Std: {np.std(len_arr)}\n")
+                per = np.percentile(len_arr, [50, 60, 70, 80, 90, 95, 99])
+                print(f"Percentile (50->90, 95, 99): {per}\n")
+            import pdb; pdb.set_trace()
         return raw_dataset
+
