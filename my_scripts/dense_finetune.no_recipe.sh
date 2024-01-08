@@ -16,11 +16,7 @@ SRC_MODEL_NAME=Llama-2-7b-hf
 SRC_MODEL=$HOME/models/llama2/$SRC_MODEL_NAME
 
 RECIPE_DIR=$ROOT/my_recipes
-RECIPE_NAME=one_epoch
-RECIPE=$RECIPE_DIR/$RECIPE_NAME.yaml
-
 FSDP_CONFIG=$RECIPE_DIR/fsdp.yaml
-
 
 LR=5e-5
 WARM=0.1
@@ -29,7 +25,7 @@ EPOCHS=1
 ID=$RANDOM
 
 DST_MODEL_DIR=$HOME/models/llama2/cnn_dailymail/dense_finetuned
-DST_MODEL_NAME=$SRC_MODEL_NAME@$DATASET@$RECIPE_NAME@LR$LR@WARM$WARM@EP$EPOCHS@ID$ID
+DST_MODEL_NAME=$SRC_MODEL_NAME@$DATASET@LR$LR@WARM$WARM@EP$EPOCHS@ID$ID
 DST_MODEL=$DST_MODEL_DIR/$DST_MODEL_NAME
 
 accelerate launch \
@@ -41,7 +37,6 @@ accelerate launch \
     --preprocessing_num_workers $WORKERS \
     --max_seq_length $MAX_LEN \
     --do_eval \
-    --recipe $RECIPE \
     --learning_rate $LR \
     --warmup_ratio $WARM \
     --output_dir $DST_MODEL \
