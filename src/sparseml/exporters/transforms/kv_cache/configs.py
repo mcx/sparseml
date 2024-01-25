@@ -170,6 +170,27 @@ GPT_NEO_CONFIG = KeyValueCacheConfig(
     multiply_batch_by_num_att_heads=False,
 )
 
+GPT_NEOX_CONFIG = KeyValueCacheConfig(
+    model_name="gpt_neox",
+    additional_transforms=None,
+    key_num_attention_heads="num_attention_heads",
+    key_num_embedding_hidden_size="hidden_size",
+    transpose_value_input=None,
+    transpose_key_input=None,
+    multiply_batch_by_num_att_heads=False,
+)
+
+GPT_BIGCODE_CONFIG = KeyValueCacheConfig(
+    model_name="gpt_bigcode",
+    additional_transforms=None,
+    key_num_attention_heads="n_head",
+    key_num_embedding_hidden_size="n_embd",
+    # transpose_value_input=(0, 2, 1, 3),
+    transpose_value_input=None,
+    transpose_key_input=None,
+    multiply_batch_by_num_att_heads=False,
+)
+
 
 def get_kv_cache_config(
     model_path: str,
@@ -181,6 +202,8 @@ def get_kv_cache_config(
         LLAMA_CONFIG,
         MISTRAL_CONFIG,
         GPT_NEO_CONFIG,
+        GPT_NEOX_CONFIG,
+        GPT_BIGCODE_CONFIG,
     ],
 ) -> KeyValueCacheConfig:
     """
