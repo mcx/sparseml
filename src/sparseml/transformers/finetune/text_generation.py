@@ -298,6 +298,7 @@ def main(
     )
     if trainer.is_fsdp_enabled:
         trainer._prepare_model_for_fsdp()
+        trainer._cleanup_memory()
     stage_runner.trainer = trainer
 
     # alternating Training/One-shot

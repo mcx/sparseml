@@ -110,6 +110,8 @@ class SessionManagerMixIn:
         else:
             self._teacher_signature_columns = None
 
+        self._cleanup_memory()
+
     def initialize_session(
         self,
         epoch: float,
@@ -358,6 +360,7 @@ class SessionManagerMixIn:
         with summon_full_params_context(self.model):
             self.log_model_sparsification()
 
+        self._cleanup_memory()
         return output
 
     def evaluate(self, *args, **kwargs):
@@ -381,6 +384,7 @@ class SessionManagerMixIn:
         self.use_cuda_amp = use_cuda_amp
         self.finalize_session()
 
+        self._cleanup_memory()
         return output
 
     def predict(self, *args, **kwargs):
@@ -397,6 +401,7 @@ class SessionManagerMixIn:
         output = super().predict(*args, **kwargs)
         self.finalize_session()
 
+        self._cleanup_memory()
         return output
 
     def one_shot(self, calib_data: DataLoader, stage: Optional[str] = None):
@@ -417,6 +422,7 @@ class SessionManagerMixIn:
         )
 
         self.accelerator.wait_for_everyone()
+        self._cleanup_memory()
 
     def save_model(
         self, output_dir: Optional[str] = None, _internal_call=False, _is_oneshot=False
@@ -460,6 +466,7 @@ class SessionManagerMixIn:
 
         _LOGGER.info(f"Saved SparseML recipe with model state to {recipe_path}")
         self.accelerator.wait_for_everyone()
+        self._cleanup_memory()
 
     def log_model_sparsification(self):
         """
@@ -553,6 +560,7 @@ class SessionManagerMixIn:
         return checkpoint, epoch
 
     def _cleanup_memory(self):
+        self.accelerator.wait_for_everyone()
         torch.cuda.empty_cache()
         self.accelerator.free_memory()
         self.accelerator.wait_for_everyone()
