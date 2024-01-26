@@ -165,7 +165,7 @@ class SessionManagerMixIn:
                 "pass a yaml file or string to the `recipe` argument."
             )
 
-        torch.cuda.empty_cache()
+        self._cleanup_memory()
 
     def initialize_structure(self, stage: Optional[str] = None):
         """
@@ -186,7 +186,7 @@ class SessionManagerMixIn:
             framework=Framework.pytorch,
         )
         _LOGGER.info(f"Initialized SparseML structure from recipe {self.recipe}")
-        torch.cuda.empty_cache()
+        self._cleanup_memory()
 
     def finalize_session(self):
         """
@@ -200,7 +200,7 @@ class SessionManagerMixIn:
             # in order to update each layer we need to gathers all its parameters
             session_manager.finalize()
         _LOGGER.info("Finalized SparseML session")
-        torch.cuda.empty_cache()
+        self._cleanup_memory()
 
     def create_optimizer(self):
         """
@@ -551,3 +551,8 @@ class SessionManagerMixIn:
             ).epoch
 
         return checkpoint, epoch
+    
+    def _cleanup_memory(self):
+        torch.cuda.empty_cache()
+        self.accelerator.free_memory()
+        self.accelerator.wait_for_everyone()

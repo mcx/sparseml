@@ -147,6 +147,7 @@ class StageRunner:
         :param stage: which stage of the recipe to run, or None to run whole recipe
         """
         _LOGGER.info("*** One Shot ***")
+        get_session_model().eval()
 
         calib_data = format_calibration_data(
             tokenized_dataset=self.get_dataset_split("calibration"),
@@ -160,7 +161,7 @@ class StageRunner:
         with torch.no_grad():
             dummy_inp.pop(PADDING_MASK_COLUMN_NAME, None)
             self.trainer.model(**dummy_inp)
-        torch.cuda.empty_cache()
+        self._cleanup_memory()
 
         self.trainer.one_shot(calib_data, stage=stage)
 
@@ -191,6 +192,8 @@ class StageRunner:
         :param stage: which stage of the recipe to run, or None to run whole recipe
         """
         _LOGGER.info("*** Train ***")
+        get_session_model().train()
+
         train_result = self.trainer.train(
             resume_from_checkpoint=checkpoint, stage=stage
         )
@@ -291,6 +294,4 @@ class StageRunner:
             # synchronize and clean up memory
             self.trainer.accelerator.wait_for_everyone()
             self.trainer.model = get_session_model()
-            torch.cuda.empty_cache()
-            self.trainer.accelerator.free_memory()
-            self.trainer.accelerator.wait_for_everyone()
+            self.trainer._cleanup_memory()
