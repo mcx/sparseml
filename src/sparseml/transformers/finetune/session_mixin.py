@@ -551,7 +551,7 @@ class SessionManagerMixIn:
             ).epoch
 
         return checkpoint, epoch
-    
+
     def _cleanup_memory(self):
         torch.cuda.empty_cache()
         self.accelerator.free_memory()
