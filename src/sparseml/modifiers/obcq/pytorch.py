@@ -219,13 +219,13 @@ class SparseGPTModifierPyTorch(SparseGPTModifier):
         num_w_perlayer = 0
         for n, m in self.model.named_modules():
             if isinstance(m, torch.nn.Linear) and "lm_head" not in n:
-                print(f"[DEBUG] owl considering = {n} with shape = {m.weight.shape}")
+                _LOGGER.debug(f"[DEBUG] owl considering = {n} with shape = {m.weight.shape}")
                 if "layers.1." in n:
                     num_w_perlayer += 1
                 wanda.append(m.weight.abs() * acts[n].unsqueeze(0))
-                print(f"wanda score shape = {wanda[-1].shape}")
+                _LOGGER.debug(f"wanda score shape = {wanda[-1].shape}")
                 names.append(n)
-        print(f"[DEBUG] there is {num_w_perlayer} Linear weight matrices per layer")
+        _LOGGER.debug(f"[DEBUG] there is {num_w_perlayer} Linear weight matrices per layer")
         perlayer_wanda = [
             torch.cat([item.flatten().cpu() for item in wanda[i : i + num_w_perlayer]])
             for i in range(0, len(wanda), num_w_perlayer)
@@ -252,10 +252,10 @@ class SparseGPTModifierPyTorch(SparseGPTModifier):
         sparsities_per_tflayer = list(
             1 - (outlier_ratios - np.mean(outlier_ratios) + (1 - float(self.sparsity)))
         )
-        print(f"[DEBUG] OWL sparsities for sp={self.sparsity} are:")
+        _LOGGER.debug(f"[DEBUG] OWL sparsities for sp={self.sparsity} are:")
         sparsities = []
         for j, sp in enumerate(sparsities_per_tflayer):
-            print(f"layers.{j} sparsity = {sp}")
+            _LOGGER.info(f"layers.{j} sparsity = {sp}")
             sparsities += [sp] * num_w_perlayer
 
         return sparsities_per_tflayer
