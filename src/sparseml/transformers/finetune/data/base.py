@@ -68,6 +68,7 @@ class TextGenerationDataset(RegistryMixin):
         if self.padding and self.tokenizer:
             if not self.tokenizer.pad_token:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         # configure sequence length
         max_seq_length = data_args.max_seq_length
@@ -122,10 +123,12 @@ class TextGenerationDataset(RegistryMixin):
         def tokenize_fn(data):
             result = self.tokenizer(
                 data[self.text_column],
-                padding=self.padding,
+                #padding=self.padding,
                 max_length=self.max_seq_length,
                 truncation=True,
             )
+            prompt = self.tokenizer(data["prompt"], max_length=self.max_seq_length, truncation=True)
+            result["prompt"] = prompt["input_ids"]
             return result
 
         # helper fn for filling to max_sequence_length by concatenating entries
@@ -144,7 +147,16 @@ class TextGenerationDataset(RegistryMixin):
 
         # helper fn for adding labels, needed for loss calculation
         def label_fn(data):
+            padding = self.max_seq_length - len(data["input_ids"])
+            prompt_length = len(data["prompt"])
             data["labels"] = data["input_ids"].copy()
+            data["labels"][:prompt_length] = [-100]*prompt_length
+            if padding > 0:
+                data["input_ids"] += [self.tokenizer.pad_token_id] 
+                data["input_ids"] += [0] * (padding - 1)
+                data["labels"] += [-100] * padding
+                data["attention_mask"] += [0] * padding
+
             return data
 
         dataset = self.map(
@@ -173,7 +185,8 @@ class TextGenerationDataset(RegistryMixin):
         dataset = self.map(
             dataset,
             function=label_fn,
-            batched=True,
+            batched=False,
+            remove_columns=["prompt"],
             num_proc=self.data_args.preprocessing_num_workers,
             load_from_cache_file=not self.data_args.overwrite_cache,
             desc="Adding labels",

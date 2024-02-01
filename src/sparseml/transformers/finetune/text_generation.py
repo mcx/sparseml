@@ -209,6 +209,8 @@ def main(
     if not fsdp_enabled and training_args.do_oneshot:
         device_map = training_args.oneshot_device
         _LOGGER.warning(f"Moving {model_path} to device {device_map} for One-Shot")
+    elif not fsdp_enabled:
+        device_map = "auto"
     model_kwargs = {
         "config": config,
         "cache_dir": model_args.cache_dir,

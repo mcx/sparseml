@@ -295,12 +295,20 @@ class SessionManagerMixIn:
 
         # TODO: do we need these model signature columns?
         inputs = {k: inputs[k] for k in inputs if k in self._model_signature_columns}
+        with open(f'output_{self.args.device}.txt', 'w') as f:
+            for name, input_data in inputs.items():
+                f.write(f"{name} {input_data.shape}\n")
+                item = input_data.cpu().numpy()
+                for row in item:
+                    f.write(f"{row}\n")
+            
         loss = super().compute_loss(model, inputs, return_outputs=return_outputs)
+        print(loss)
 
         # take the mean across multiple GPUs
         # this is done outside the compute_loss function in the parent, replicating it
         # here for SparseML logging and distillation
-        loss = loss.mean()
+        #loss = loss.mean()
 
         if session_manager.active_session().lifecycle.initialized_:
             state = callbacks.loss_calculated(loss=loss)
@@ -438,7 +446,7 @@ class SessionManagerMixIn:
             output_dir = self.args.output_dir
 
         # don't export the gathered model on checkpoints
-        if is_fsdp_model(self.model) and not _internal_call:
+        if is_fsdp_model(self.model): #and not _internal_call:
             save_pretrained_fsdp(
                 model=self.model, accelerator=self.accelerator, output_dir=output_dir
             )
