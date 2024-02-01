@@ -123,11 +123,13 @@ class TextGenerationDataset(RegistryMixin):
         def tokenize_fn(data):
             result = self.tokenizer(
                 data[self.text_column],
-                #padding=self.padding,
+                # padding=self.padding,
                 max_length=self.max_seq_length,
                 truncation=True,
             )
-            prompt = self.tokenizer(data["prompt"], max_length=self.max_seq_length, truncation=True)
+            prompt = self.tokenizer(
+                data["prompt"], max_length=self.max_seq_length, truncation=True
+            )
             result["prompt"] = prompt["input_ids"]
             return result
 
@@ -150,9 +152,9 @@ class TextGenerationDataset(RegistryMixin):
             padding = self.max_seq_length - len(data["input_ids"])
             prompt_length = len(data["prompt"])
             data["labels"] = data["input_ids"].copy()
-            data["labels"][:prompt_length] = [-100]*prompt_length
+            data["labels"][:prompt_length] = [-100] * prompt_length
             if padding > 0:
-                data["input_ids"] += [self.tokenizer.pad_token_id] 
+                data["input_ids"] += [self.tokenizer.pad_token_id]
                 data["input_ids"] += [0] * (padding - 1)
                 data["labels"] += [-100] * padding
                 data["attention_mask"] += [0] * padding
