@@ -123,7 +123,7 @@ class TextGenerationDataset(RegistryMixin):
         def tokenize_fn(data):
             result = self.tokenizer(
                 data[self.text_column],
-                # padding=self.padding,
+                padding=self.padding,
                 max_length=self.max_seq_length,
                 truncation=True,
             )
@@ -149,15 +149,12 @@ class TextGenerationDataset(RegistryMixin):
 
         # helper fn for adding labels, needed for loss calculation
         def label_fn(data):
-            padding = self.max_seq_length - len(data["input_ids"])
+            padding = self.max_seq_length - sum(data["attention_mask"])
             prompt_length = len(data["prompt"])
             data["labels"] = data["input_ids"].copy()
             data["labels"][:prompt_length] = [-100] * prompt_length
             if padding > 0:
-                data["input_ids"] += [self.tokenizer.pad_token_id]
-                data["input_ids"] += [0] * (padding - 1)
-                data["labels"] += [-100] * padding
-                data["attention_mask"] += [0] * padding
+                data["labels"][-padding:] = [-100] * padding
 
             return data
 

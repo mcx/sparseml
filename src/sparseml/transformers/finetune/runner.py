@@ -113,7 +113,7 @@ class StageRunner:
                 tokenizer=tokenizer,
             )
 
-            store_padding_mask = False
+            store_padding_mask = True
             if self._training_args.do_oneshot and split_name == "calibration":
                 store_padding_mask = True
             raw_dataset = dataset_manager.get_raw_dataset(self._model_args.cache_dir)

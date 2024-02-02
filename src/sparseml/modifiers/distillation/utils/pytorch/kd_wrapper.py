@@ -98,7 +98,10 @@ class KDModuleWrapper(Module):
                 student_output = transform(student_output)
                 teacher_output = transform(teacher_output)
 
-            comp = self.kd_comparison(student_output, teacher_output)
+            nonpadding_tokens = kwargs["padding_mask"] == 1
+            comp = self.kd_comparison(
+                student_output[nonpadding_tokens], teacher_output[nonpadding_tokens]
+            )
             comp = recursive_apply(comp, lambda x: x.mean())
             if isinstance(comp, Sequence):
                 comp = torch.stack(comp).sum()

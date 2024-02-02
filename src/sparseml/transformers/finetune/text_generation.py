@@ -230,14 +230,14 @@ def main(
     # this calls from_pretrained under the hood so should be FSDP safe
     model = SparseAutoModel.text_generation_from_pretrained(
         model_name_or_path=model_path,
-        sequence_length=None,  # use model default
+        sequence_length=data_args.max_seq_length,  # use model default
         **model_kwargs,
     )
 
     teacher = (
         SparseAutoModel.text_generation_from_pretrained(
             model_name_or_path=training_args.distill_teacher,
-            sequence_length=None,  # use model default
+            sequence_length=data_args.max_seq_length,  # use model default
             **teacher_kwargs,
         )
         if training_args.distill_teacher is not None
