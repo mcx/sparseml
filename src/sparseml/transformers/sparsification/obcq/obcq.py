@@ -153,12 +153,13 @@ def one_shot(
             seqlen=model.seqlen,
             nsamples=None,
             seed=0,
-            split="test",
-            split_percent_to_use=0.1 if eval_data == "open_platypus" else 1.0,
+            split="validation" if eval_data == "cnn-dailymail" else "test",
+            split_percent_to_use=0.01 if eval_data == "open_platypus" or "cnn-dailymail" else 1.0,
         )
         test_data = dataset.loader
+        output_file = os.path.join(deploy_dir, "ppl.json")
         ppl_eval_general(
-            forward_fn, model, test_data, device, max_samples_per_iteration=8
+            forward_fn, model, test_data, device, max_samples_per_iteration=8, output_file=output_file
         )
 
     return model

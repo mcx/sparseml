@@ -46,9 +46,10 @@ class LayerCompressor:
     """
 
     def __init__(
-        self, model: Module, layer: Module, layer_index: int, inputs: List, args: Dict
+        self, model: Module, layer_name: str, layer: Module, layer_index: int, inputs: List, args: Dict
     ):
         self.model = model
+        self.layer_name = layer_name
         self.layer = layer
         self.layer_index = layer_index
         self.inputs = inputs
@@ -116,7 +117,25 @@ class LayerCompressor:
             gpts = extras["gpts"]
             for name in gpts:
                 _LOGGER.info(f"Compressing {name}...")
-                sparsity = self.args["sparsity"]
+                sparsity_dict = self.args["sparsity"]
+                assert(isinstance(sparsity_dict, Dict))
+                if self.layer_name in sparsity_dict:
+                    # All modules in a decoder layer have the same sparsity
+                    sparsity_key_name = self.layer_name
+                else:
+                    sparsity_key_name =  self.layer_name + "." + name
+
+                if sparsity_key_name in sparsity_dict:
+                    # This is for the "linear_module" option of owl granularity
+                    sparsity = sparsity_dict[sparsity_key_name]
+                else:
+                    sparsity = None
+                    for k in sparsity_dict.keys():
+                        if sparsity_key_name.find(k) > 0:
+                            sparsity = sparsity_dict[k]
+                            break
+                    assert sparsity is not None, f"Cannot find sparsity level for {sparsity_key_name}"
+
                 gpts[name].fasterprune(
                     sparsity,
                     prunen=self.args["prunen"],

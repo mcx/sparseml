@@ -58,6 +58,7 @@ class SparseGPTModifier(Modifier):
     sparsity_profile: Optional[str] = None
     owl_m: Optional[int] = None
     owl_lmbda: Optional[float] = None
+    owl_outlier_granularity: Optional[str] = None
     block_size: int
     quantize: Union[bool, Dict]
     dampening_frac: Optional[float] = 0.01
@@ -84,8 +85,10 @@ class SparseGPTModifier(Modifier):
 
         :return: list of Pytorch modules to compress
         """
+        # import pdb; pdb.set_trace()
         compressible_dict = self.model.get_layers(self.targets)
-        return [v for _, v in compressible_dict.items()]
+        # return [v for _, v in compressible_dict.items()]
+        return compressible_dict
 
     def on_initialize_structure(self, state: State, **kwargs):
         quantization_already_active = state.model.qat_active()
@@ -157,12 +160,13 @@ class SparseGPTModifier(Modifier):
                 f" sparsity. Got {self.targets}"
             )
 
-        if len(self.targets) != len(self.sparsity):
-            raise ValueError(
-                "Number of layer targets must match the number of "
-                f"sparsities. Got {len(self.targets)} layers and "
-                f"{len(self.sparsity)} sparsities"
-            )
+        if self.owl_outlier_granularity is None or self.owl_outlier_granularity == "decoder_layer":
+            if len(self.targets) != len(self.sparsity):
+                raise ValueError(
+                    "Number of layer targets must match the number of "
+                    f"sparsities. Got {len(self.targets)} layers and "
+                    f"{len(self.sparsity)} sparsities"
+                )
 
         for layer_name in self.targets:
             if layer_name.startswith("re:"):

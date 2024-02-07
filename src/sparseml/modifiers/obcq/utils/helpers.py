@@ -161,14 +161,14 @@ def cache_attention_inputs(
 
 @torch.no_grad()
 def ppl_eval_general(
-    eval_logits, model, dataloader, dev, nsamples=None, max_samples_per_iteration=128
+    eval_logits, model, dataloader, dev, nsamples=None, max_samples_per_iteration=128, output_file=None
 ):
     _LOGGER.info("Evaluating perplexity...")
 
     if nsamples is None:
         nsamples = len(dataloader)
-
     number_iterations = int(ceil(nsamples / max_samples_per_iteration))
+    
     neg_log_likelihood = 0.0
     number_tokens = 0
     for iteration in range(number_iterations):
@@ -199,6 +199,10 @@ def ppl_eval_general(
         _LOGGER.info(torch.exp(neg_log_likelihood / number_tokens))
 
     ppl = torch.exp(neg_log_likelihood / number_tokens)
+    if output_file is not None:
+        import json
+        with open(output_file, "w") as f:
+            json.dump({"ppl": ppl.item()}, f)
     _LOGGER.info(f"Perplexity: {ppl.item():3f}")
 
     return ppl.item()
