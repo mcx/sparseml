@@ -19,7 +19,7 @@ DST_MODEL_DIR=$MODEL_DIR/owl
 
 M=5
 
-for SP in 60
+for SP in 70 80 85
 do
 for LMBDA in 0.02
 do
