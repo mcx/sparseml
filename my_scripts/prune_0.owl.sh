@@ -12,22 +12,23 @@ MODEL_DIR=$HOME/models/llama2/cnn_dailymail
 #SRC_MODEL=$MODEL_DIR/llama-recipes/dense_finetuned/Llama-2-7b-hf@lr8e-5@B16@GrAcc4@W0.1@ep1@GPUs8@WD0.0@ID$SRC_ID
 
 # 50% sparse finetuned model
-#SRC_ID=3641
-#SRC_MODEL=$MODEL_DIR/llama-recipes/sparse_finetuned/sparse_ft@SRC5043@lr8e-5@WD0.0@B8@GrAcc8@W0.1@ep1@GPUs7@ID$SRC_ID/hf
+SRC_ID=15577
+SRC_MODEL=$MODEL_DIR/llama-recipes/sparse_finetuned/sparse_ft@SRCcerebras50@lr1e-4@WD0.0@B8@GrAcc8@W0.1@ep2@GPUs7@ID$SRC_ID
+
 
 #################################
 # 50% sparse upstream model from Cerebras
-SRC_ID=cerebras50
-SRC_MODEL_DIR=/home/tuan/models/llama2/cerebras
-SRC_MODEL_NAME=llama2-7b@$SRC_ID
-SRC_MODEL=$SRC_MODEL_DIR/$SRC_MODEL_NAME
+#SRC_ID=cerebras50
+#SRC_MODEL_DIR=/home/tuan/models/llama2/cerebras
+#SRC_MODEL_NAME=llama2-7b@$SRC_ID
+#SRC_MODEL=$SRC_MODEL_DIR/$SRC_MODEL_NAME
 
 
 DST_MODEL_DIR=$MODEL_DIR/owl
 
 M=5
 
-for SP in 60 70 80 85
+for SP in 60
 do
 for LMBDA in 0.02
 do
