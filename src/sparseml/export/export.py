@@ -70,6 +70,7 @@ from typing import Any, List, Optional, Union
 import numpy
 
 import click
+import sparseml.core.session as session_manager
 from sparseml.export.helpers import (
     AVAILABLE_DEPLOYMENT_TARGETS,
     ONNX_MODEL_NAME,
@@ -225,6 +226,10 @@ def export(
         **kwargs,
     )
     model.eval()
+
+    # once model is loaded we can clear the SparseSession, it was only needed for
+    # adding structural changes (ie quantization) to the model
+    session_manager.active_session().reset()
 
     if loaded_model_kwargs:
         _LOGGER.info(
