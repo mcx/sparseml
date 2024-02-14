@@ -159,7 +159,7 @@ def test_sparsities():
     assert math.isclose(layer_2_dense.item(), 0.0, rel_tol=1e-4)
 
 
-def test_sgpt_defaults():
+def test_sgpt_defaults():    
     kwargs = {"sparsity": 0.5}
     sparsegpt_modifier_only_sparsity = SparseGPTModifier(
         framework=Framework.pytorch, **kwargs
@@ -180,5 +180,6 @@ def test_sgpt_defaults():
     kwargs = {}
     sparsegpt_invalid = SparseGPTModifier(framework=Framework.pytorch, **kwargs)
     state_test = State(framework=Framework.pytorch)
+    sparsegpt_invalid.initialized_structure_ = True
     with pytest.raises(ValueError):
         sparsegpt_invalid.on_initialize(state=state_test)
