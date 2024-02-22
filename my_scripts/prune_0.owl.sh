@@ -11,9 +11,13 @@ MODEL_DIR=$HOME/models/llama2/cnn_dailymail
 #SRC_ID=2967
 #SRC_MODEL=$MODEL_DIR/llama-recipes/dense_finetuned/Llama-2-7b-hf@lr8e-5@B16@GrAcc4@W0.1@ep1@GPUs8@WD0.0@ID$SRC_ID
 
+###############################
 # 50% sparse finetuned model
-SRC_ID=15577
-SRC_MODEL=$MODEL_DIR/llama-recipes/sparse_finetuned/sparse_ft@SRCcerebras50@lr1e-4@WD0.0@B8@GrAcc8@W0.1@ep2@GPUs7@ID$SRC_ID
+#SRC_ID=15577
+#SRC_MODEL=$MODEL_DIR/llama-recipes/sparse_finetuned/sparse_ft@SRCcerebras50@lr1e-4@WD0.0@B8@GrAcc8@W0.1@ep2@GPUs7@ID$SRC_ID
+
+SRC_ID=3641
+SRC_MODEL=$MODEL_DIR/llama-recipes/sparse_finetuned/sparse_ft@SRC5043@lr8e-5@WD0.0@B8@GrAcc8@W0.1@ep1@GPUs7@ID$SRC_ID
 
 
 #################################
