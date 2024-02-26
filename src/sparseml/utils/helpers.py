@@ -32,6 +32,7 @@ from urllib.parse import urlparse
 
 import numpy
 
+from sparsezoo import Model
 from sparsezoo.utils import load_numpy_list
 
 
@@ -68,6 +69,7 @@ __all__ = [
     "json_to_jsonl",
     "deprecation_warning",
     "parse_kwarg_tuples",
+    "download_zoo_training_dir",
 ]
 
 
@@ -862,6 +864,12 @@ def parse_kwarg_tuples(kwargs: tuple) -> Dict:
     output = {'arg1': 1, 'arg2': 2, 'arg3': 3}
     ```
 
+    ```
+    input = ('--arg1', 1, '--args1', 2 , 'arg2', 2, '-arg3', 3)
+    output = parse_kwarg_tuples(input)
+    output = {'arg1': [1, 2], 'arg2': 2, 'arg3': 3}
+    ```
+
     :param kwargs: The kwargs to convert. Should be a tuple of alternating
         kwargs names and kwargs values e.g.('--arg1', 1, 'arg2', 2, -arg3', 3).
         The names can optionally have a '-' or `--` in front of them.
@@ -893,5 +901,37 @@ def parse_kwarg_tuples(kwargs: tuple) -> Dict:
             pass
     # remove any '-' or '--' from the names
     kwargs_names = [name.lstrip("-") for name in kwargs_names]
+    processed_kwargs = {}
+    for kwarg_name, kwarg_value in zip(kwargs_names, kwargs_values):
+        if kwarg_name in processed_kwargs:
+            # if the kwarg name is already in the processed kwargs,
+            # then we should convert the value to a list
+            if not isinstance(processed_kwargs[kwarg_name], list):
+                processed_kwargs[kwarg_name] = [processed_kwargs[kwarg_name]]
+            processed_kwargs[kwarg_name].append(kwarg_value)
+        else:
+            processed_kwargs[kwarg_name] = kwarg_value
+    return processed_kwargs
 
-    return dict(zip(kwargs_names, kwargs_values))
+
+def download_zoo_training_dir(zoo_stub: str) -> str:
+    """
+    Helper function to download the training directory from a zoo stub,
+    takes care of downloading the missing files in the training
+    directory if any (This can happen if a some subset of files in the
+    training directory were downloaded before)
+
+    :param zoo_stub: The zoo stub to download the training directory from
+    :return: The path to the downloaded training directory
+    """
+    sparsezoo_model = Model(zoo_stub)
+    training_dir_path = sparsezoo_model.training.path
+
+    # download missing files if any this can happen if
+    # some subset of files in the training directory
+    # were downloaded before
+
+    for file_name in sparsezoo_model.training.files:
+        file_name.path
+
+    return training_dir_path

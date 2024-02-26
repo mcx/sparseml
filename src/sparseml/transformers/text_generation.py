@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# flake8: noqa
+"""
+Wrapper module to enable `from sparseml.transformers.text_generation import ...`
+See ./finetune/text_generation.py
+"""
 
-from .text_generation import apply, compress, eval, oneshot, train
+# flake8: noqa
+from sparseml.transformers.finetune.text_generation import *

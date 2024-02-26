@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# flake8: noqa
+import os
 
-from .text_generation import apply, compress, eval, oneshot, train
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def run_before_and_after_tests(tmp_path):
+    os.environ["TRANSFORMERS_CACHE"] = str(tmp_path / "transformers")
+    os.environ["HF_DATASETS_CACHE"] = str(tmp_path / "datasets")
+    os.environ["SPARSEZOO_MODELS_PATH"] = str(tmp_path / "sparsezoo")
+    yield
