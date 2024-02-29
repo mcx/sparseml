@@ -136,6 +136,10 @@ _ultralytics_deps = [
 ]
 
 
+_peft = [
+    "peft~=0.8.2" # 3.10.12 python
+]
+
 def _setup_packages() -> List:
     return find_packages(
         "src", include=["sparseml", "sparseml.*"], exclude=["*.__pycache__.*"]

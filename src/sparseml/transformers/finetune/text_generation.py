@@ -20,8 +20,9 @@
 import logging
 import os
 from pathlib import PosixPath
-
+from peft import get_peft_model, LoraConfig, LoraConfig
 import datasets
+from torch.nn import Module
 import transformers
 from transformers import (
     AutoConfig,
@@ -220,8 +221,25 @@ def intialize_model_from_path(
         else None
     )
 
-    return teacher, model_path, model
+    return teacher, model_path, initialize_peft_model(model=model)
 
+
+def initialize_peft_model(model: Module):
+    peft_config = LoraConfig(
+        task_type="CAUSAL_LM",
+        r=0.5,
+        lora_alpha=32,
+        target_modules=[
+            "q_proj", "v_proj"
+            ],
+        bias=None,
+        lora_dropout=0.05,
+        inference_mode=False,
+    )
+    peft_model = get_peft_model(model, peft_config)
+    return peft_model
+    
+    
 
 def initialize_tokenizer_from_path(model_args, model, teacher):
     tokenizer_src = model_args.tokenizer
