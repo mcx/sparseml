@@ -221,7 +221,8 @@ def intialize_model_from_path(
         else None
     )
 
-    return teacher, model_path, initialize_peft_model(model=model)
+    peft_model = initialize_peft_model(model=model)
+    return teacher, model_path, peft_model
 
 
 def initialize_peft_model(model: Module):
