@@ -21,5 +21,6 @@ from .evolcodealpaca import EvolCodeAlpacaDataset
 from .gsm8k import GSM8KDataset
 from .open_platypus import OpenPlatypusDataset
 from .ptb import PtbDataset
+from .samsum import SAMSumDataset
 from .ultrachat_200k import UltraChatDataset
 from .wikitext import WikiTextDataset
