@@ -75,7 +75,7 @@ class CustomDataset(TextGenerationDataset):
             raw_dataset = self.map(
                 raw_dataset,
                 batched=False,
-                remove_columns=self.remove_columns,
+                # remove_columns=self.remove_columns,
                 num_proc=self.data_args.preprocessing_num_workers,
                 desc="Removing unneeded columns",
             )
@@ -85,10 +85,12 @@ class CustomDataset(TextGenerationDataset):
     def get_remove_columns_from_dataset(self, raw_dataset: DatasetDict) -> List[str]:
         """Remove redandant columns from the dataset for processing"""
         remove_columns = set()
-        for datasets in raw_dataset.values():
-            for feature in datasets.features.keys():
-                remove_columns.add(feature)
+        # if isinstance(raw_dataset, DatasetDict):
+        #     for datasets in raw_dataset.values():
+        #         for feature in datasets.features.keys():
+        #             remove_columns.add(feature)
 
-        remove_columns.remove(self.text_column)
-
-        return list(remove_columns)
+        # if self.text_column is not None:
+        #     remove_columns.remove(self.text_column)
+    
+        return raw_dataset.features

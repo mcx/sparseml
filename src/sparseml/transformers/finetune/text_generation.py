@@ -30,7 +30,7 @@ from transformers import (
     HfArgumentParser,
     set_seed,
 )
-
+import torch
 import sparseml.core.session as session_manager
 from sparseml.core.framework import Framework
 from sparseml.core.recipe import Recipe, StageRunType
@@ -205,6 +205,7 @@ def intialize_model_from_path(
         "device_map": teacher_device_map,
     }
     # this calls from_pretrained under the hood so should be FSDP safe
+    model_kwargs["torch_dtype"]=torch.float16
     model = SparseAutoModel.text_generation_from_pretrained(
         model_name_or_path=model_path,
         sequence_length=None,  # use model default
@@ -228,12 +229,12 @@ def intialize_model_from_path(
 def initialize_peft_model(model: Module):
     peft_config = LoraConfig(
         task_type="CAUSAL_LM",
-        r=0.5,
+        r=8,
         lora_alpha=32,
         target_modules=[
             "q_proj", "v_proj"
             ],
-        bias=None,
+        bias="none",
         lora_dropout=0.05,
         inference_mode=False,
     )
