@@ -118,23 +118,25 @@ class LayerCompressor:
             for name in gpts:
                 _LOGGER.info(f"Compressing {name}...")
                 sparsity_dict = self.args["sparsity"]
-                assert(isinstance(sparsity_dict, Dict))
-                if self.layer_name in sparsity_dict:
-                    # All modules in a decoder layer have the same sparsity
-                    sparsity_key_name = self.layer_name
-                else:
-                    sparsity_key_name =  self.layer_name + "." + name
+                if isinstance(sparsity_dict, Dict):
+                    if self.layer_name in sparsity_dict:
+                        # All modules in a decoder layer have the same sparsity
+                        sparsity_key_name = self.layer_name
+                    else:
+                        sparsity_key_name =  self.layer_name + "." + name
 
-                if sparsity_key_name in sparsity_dict:
-                    # This is for the "linear_module" option of owl granularity
-                    sparsity = sparsity_dict[sparsity_key_name]
+                    if sparsity_key_name in sparsity_dict:
+                        # This is for the "linear_module" option of owl granularity
+                        sparsity = sparsity_dict[sparsity_key_name]
+                    else:
+                        sparsity = None
+                        for k in sparsity_dict.keys():
+                            if sparsity_key_name.find(k) > 0:
+                                sparsity = sparsity_dict[k]
+                                break
+                        assert sparsity is not None, f"Cannot find sparsity level for {sparsity_key_name}"
                 else:
-                    sparsity = None
-                    for k in sparsity_dict.keys():
-                        if sparsity_key_name.find(k) > 0:
-                            sparsity = sparsity_dict[k]
-                            break
-                    assert sparsity is not None, f"Cannot find sparsity level for {sparsity_key_name}"
+                   sparsity = sparsity_dict
 
                 gpts[name].fasterprune(
                     sparsity,
