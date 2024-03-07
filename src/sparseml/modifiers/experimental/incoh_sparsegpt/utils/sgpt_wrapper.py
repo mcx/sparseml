@@ -30,12 +30,51 @@ import torch
 import torch.nn as nn
 
 
-__all__ = ["SparseGptWrapper"]
+__all__ = ["IncohSparseGptWrapper"]
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class SparseGptWrapper(ModuleCompressionWrapper):
+# =============================================================================
+# Incoherence Processing
+# =============================================================================
+
+def FFT(X, phase, inverse=False):
+    "operates on 2nd dimension"
+    n = X.shape[-1]
+    assert n % 2 == 0
+    assert len(phase) == n//2
+    output = X.float().view(-1, n//2, 2)
+    output = torch.view_as_complex(output.contiguous())
+    if not inverse:
+        output = output * phase
+        output = torch.fft.fft(output, dim=-1, norm='ortho')
+    else:
+        output = torch.fft.ifft(output, dim=-1, norm='ortho')
+        output = output * torch.conj(phase)
+    output = torch.view_as_real(output)
+    return output.view(-1, n)
+
+
+def FFT_H(H, SU):
+    return FFT(FFT(H, phase=SU).T, phase=SU).T
+
+
+def FFT_W(W, SU, SV):
+    return FFT(FFT(W.T, phase=SV).T, phase=SU)
+
+
+def FFT_W_inv(W, SU, SV):
+    return FFT(
+        FFT(W, SU, inverse=True).T,
+        SV, inverse=True).T
+
+# =============================================================================
+# =============================================================================
+
+
+
+class IncohSparseGptWrapper(ModuleCompressionWrapper):
     """
     Runs SparseGPT on a single module that contains no sub-modules
 
@@ -118,14 +157,38 @@ class SparseGptWrapper(ModuleCompressionWrapper):
         diag = torch.arange(self.columns, device=self.dev)
         self.H[diag, diag] += damp
 
-        # =====================================================================
-        # Jerry Added, testing alternate loss calculation is equivalent
-        # =====================================================================
+        # =================================================
+        # Incoherence Processing
+        # =================================================
         import copy
         Worig = copy.deepcopy(W).cpu()
         Horig = copy.deepcopy(self.H).cpu()
-        # =====================================================================
-        # =====================================================================
+
+        # check incoherence 
+        if True:
+            Wij_max = W.abs().max().item()
+            _, eigH = torch.linalg.eigh(self.H)
+            Qij_max = eigH.abs().max().item()
+
+        (m, n) = W.shape
+        theta_SU = 2 * math.pi * torch.rand(n//2).to(self.dev)
+        theta_SV = 2 * math.pi * torch.rand(m//2).to(self.dev)
+        SU = torch.complex(theta_SU.cos(), theta_SU.sin())
+        SV = torch.complex(theta_SV.cos(), theta_SV.sin())
+        self.H = FFT_H(self.H, SU)
+        W = FFT_W(W, SU, SV)
+        SU = SU.cpu()
+        SV = SV.cpu()
+
+        if True:
+            hatWij_max = W.abs().max().item()
+            _, hateigH = torch.linalg.eigh(self.H)
+            hatQij_max = hateigH.abs().max().item()
+            _LOGGER.info(f"max|W_ij|: {Wij_max:.3f} / {hatWij_max:.3f}")
+            _LOGGER.info(f"max|Q_ij|: {Qij_max:.3f} / {hatQij_max:.3f}")
+        # =================================================
+        # =================================================
+
 
         self.H = torch.linalg.cholesky(self.H)
         self.H = torch.cholesky_inverse(self.H)
@@ -197,9 +260,12 @@ class SparseGptWrapper(ModuleCompressionWrapper):
         _LOGGER.info("time %.2f" % (time.time() - tick))
         _LOGGER.info("error %.2f" % torch.sum(Losses).item())
 
-        # =====================================================================
-        # Jerry Added, comparing proxy loss 
-        # =====================================================================
+        # =======================================
+        # =======================================
+        # Incoherence Processing
+        W = FFT_W_inv(W, SU.to(self.dev), SV.to(self.dev))
+
+        # Comparing proxy loss 
         Worig = Worig.to(self.dev)
         Horig = Horig.to(self.dev)
         err_frob = (W - Worig).square().sum() / Worig.square().sum()
