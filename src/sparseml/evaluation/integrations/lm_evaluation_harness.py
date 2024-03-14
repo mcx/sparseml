@@ -18,8 +18,6 @@ from typing import Any, Dict, List, Union
 from sparseml.evaluation.registry import SparseMLEvaluationRegistry
 from sparsezoo.evaluation.results import Dataset, Evaluation, Metric, Result
 
-from peft import PeftModel
-
 try:
     from lm_eval import evaluator, tasks, utils
     from lm_eval.models.huggingface import HFLM
@@ -135,6 +133,7 @@ class SparseMLLM(HFLM):
             pretrained, **relevant_kwargs
         )
         if kwargs['peft']:
+            from peft import PeftModel
             model = PeftModel.from_pretrained(model, kwargs['peft'])
         self._model = model
 
