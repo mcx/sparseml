@@ -77,6 +77,14 @@ _LOGGER = logging.getLogger(__name__)
 @click.argument(
     "model_path", type=click.Path(dir_okay=True, file_okay=True), required=True
 )
+# @click.argument(
+#     "-p",
+#     "--peft_model_path",
+#     type=click.Path(dir_okay=True, file_okay=True),
+#     default=None,
+#     required=False
+# )
+
 @click.option(
     "-d",
     "--dataset",

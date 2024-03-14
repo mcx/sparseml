@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Union
 from sparseml.evaluation.registry import SparseMLEvaluationRegistry
 from sparsezoo.evaluation.results import Dataset, Evaluation, Metric, Result
 
+from peft import PeftModel
 
 try:
     from lm_eval import evaluator, tasks, utils
@@ -85,6 +86,7 @@ def lm_eval_harness(
 
     _LOGGER.info(f"Selected Tasks: {task_names}")
 
+    kwargs.pop('peft', None)
     results_raw = evaluator.simple_evaluate(
         model=model,
         tasks=task_names,
@@ -96,7 +98,6 @@ def lm_eval_harness(
         raw=results_raw,
         formatted=_format_lm_eval_raw_results(results_raw),
     )
-
     return results
 
 
@@ -131,6 +132,8 @@ class SparseMLLM(HFLM):
         model = SparseAutoModelForCausalLM.from_pretrained(
             pretrained, **relevant_kwargs
         )
+        if kwargs['peft']:
+            model = PeftModel.from_pretrained(model, kwargs['peft'])
         self._model = model
 
     def _get_config(self, pretrained: str, **kwargs) -> None:
