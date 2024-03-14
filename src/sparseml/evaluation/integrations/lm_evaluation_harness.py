@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Union
 from sparseml.evaluation.registry import SparseMLEvaluationRegistry
 from sparsezoo.evaluation.results import Dataset, Evaluation, Metric, Result
 
+
 try:
     from lm_eval import evaluator, tasks, utils
     from lm_eval.models.huggingface import HFLM
@@ -98,6 +99,7 @@ def lm_eval_harness(
         raw=results_raw,
         formatted=_format_lm_eval_raw_results(results_raw),
     )
+
     return results
 
 
