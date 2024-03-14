@@ -35,6 +35,7 @@ try:
     # version is installed for SparseML
     from sparseml.transformers.utils.sparse_config import SparseAutoConfig
     from sparseml.transformers.utils.sparse_model import SparseAutoModelForCausalLM
+    from sparseml.transformers.utils.sparse_tokenizer import SparseAutoTokenizer
 except ImportError as import_error:
     raise ImportError(
         "Install sparseml supported dependencies for lm-eval integration by running "
@@ -68,9 +69,10 @@ def lm_eval_harness(
     :param kwargs: additional keyword arguments to pass to the
         lm-evaluation-harness. For example, `limit`
     """
-
     kwargs["limit"] = int(limit) if (limit := kwargs.get("limit")) else None
-    model = SparseMLLM(pretrained=model_path, **kwargs)
+
+    tokenizer = SparseAutoTokenizer.from_pretrained(model_path)
+    model = SparseMLLM(pretrained=model_path, tokenizer=tokenizer, **kwargs)
 
     if kwargs.get("limit"):
         _LOGGER.warning(
