@@ -131,7 +131,7 @@ def find_and_move_state_dicts_to_cpu(output_dir: str):
     """
 
     for model_file in Path(output_dir).rglob("pytorch_model*.bin"):
-        loaded_dict = torch.load(model_file)
+        loaded_dict = torch.load(model_file, map_location="cpu")
         for key, value in loaded_dict.items():
             if isinstance(value, torch.Tensor):
                 loaded_dict[key] = value.cpu()

@@ -370,14 +370,7 @@ class SessionManagerMixIn:
         self.finalize_session()
 
         self.accelerator.wait_for_everyone()
-
-        # log model sparsity
-        with summon_full_params_context(self.model, offload_to_cpu=True):
-            if self.accelerator.is_main_process:
-                if not qat_active(self.model):
-                    self.log_model_sparsification()
-
-        self.accelerator.wait_for_everyone()
+        self.maybe_log_model_sparsification()
 
         return output
 
@@ -439,13 +432,8 @@ class SessionManagerMixIn:
             accelerator=self.accelerator,
         )
 
-        # log model sparsity
-        with summon_full_params_context(self.model, offload_to_cpu=True):
-            if self.accelerator.is_main_process:
-                if not qat_active(self.model):
-                    self.log_model_sparsification()
-
         self.accelerator.wait_for_everyone()
+        self.maybe_log_model_sparsification()
 
     def save_model(
         self, output_dir: Optional[str] = None, _internal_call=False, _is_oneshot=False
@@ -491,6 +479,20 @@ class SessionManagerMixIn:
             fp.write(recipe_yaml_str)
 
         _LOGGER.info(f"Saved SparseML recipe with model state to {recipe_path}")
+        self.accelerator.wait_for_everyone()
+
+    def maybe_log_model_sparsification(self):
+        if not self.accelerator.is_main_process:
+            # only log once
+            return
+        if qat_active(self.model):
+            # due to state dict changes we can't log stats for quantized models in FSDP
+            return
+
+        # log model sparsity
+        with summon_full_params_context(self.model, offload_to_cpu=True):
+            self.log_model_sparsification()
+
         self.accelerator.wait_for_everyone()
 
     def log_model_sparsification(self):

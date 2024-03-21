@@ -179,13 +179,8 @@ class StageRunner:
                     output_dir=self._output_dir,
                     tokenizer=self.tokenizer,
                 )
-                # only allow the main process move the state
-                # dicts to cpu
+                # only allow the main process move the state dicts to cpu
                 if self.trainer.accelerator.is_main_process:
-                    # assuming quantization is the last step
-                    # we no longer need the original model
-                    # and can safely delete it to save memory
-                    del self.trainer.model
                     find_and_move_state_dicts_to_cpu(self._output_dir)
 
         else:
