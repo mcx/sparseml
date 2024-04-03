@@ -91,6 +91,10 @@ class QuantizationArgs(BaseModel):
             "Observers constructor excluding quantization range or symmetry"
         ),
     )
+    group_size: int
+    block_size: int
+    observer: str
+    observer_kwargs: Dict[str, Any]
 
     @classmethod
     def default_activation_args(cls):
