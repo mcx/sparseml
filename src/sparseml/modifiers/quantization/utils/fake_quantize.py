@@ -34,10 +34,36 @@ def fake_quantize(
     zero_point: torch.Tensor,
     args: QuantizationArgs,
 ) -> torch.Tensor:
-    quant_min = 0
-    quant_max = torch.tensor(2**args.n_bits - 1)
+    max_q = torch.tensor(2**args.n_bits - 1)
+    columns = x.shape[1]
+    for i1 in range(0, columns, args.block_size):
+        i2 = min(i1 + args.block_size, columns)
+        count = i2 - i1
 
-    x_q = quantize(x, scale, zero_point, quant_min, quant_max)
+        W1 = x[:, i1:i2].clone()
+        Q1 = torch.zeros_like(W1)
+
+        for i in range(count):
+            w = W1[:, i]
+
+            if args.group_size != -1:
+                if (i1 + i) % args.group_size == 0:
+                    xmin, xmax = get_qparams(
+                        x[:, (i1 + i) : (i1 + i + args.group_size)], args.symmetric
+                    )
+                    scale, zero = get_scale_zero_point(
+                        x[:, (i1 + i) : (i1 + i + args.group_size)],
+                        max_q,
+                        xmax,
+                        xmin,
+                        args.symmetric,
+                        args.group_size,
+                    )
+
+            q = quantize(w.unsqueeze(1), scale, zero, max_q).flatten()
+            Q1[:, i] = q
+
+    x_q = quantize(x, scale, zero_point, max_q)
     return dequantize(x_q, scale, zero_point)
 
 
@@ -82,18 +108,19 @@ def get_scale_zero_point(
             zero = torch.full_like(scale, (max_q + 1) / 2)
         else:
             zero = torch.round(-xmin / scale)
-    
+
     # channel-wise quant
     if group_size == -1:
         tmp = x.shape[0]
         scale = scale.repeat(tmp)
         zero = zero.repeat(tmp)
-    
+
     shape = [-1] + [1] * (len(shape) - 1)
     scale = scale.reshape(shape)
     zero = zero.reshape(shape)
-        
+
     return scale, zero
+
 
 # move to observer
 def get_qparams(x: torch.Tensor, is_symmetric: bool):
@@ -109,5 +136,5 @@ def get_qparams(x: torch.Tensor, is_symmetric: bool):
     tmp = (xmin == 0) & (xmax == 0)
     xmin[tmp] = -1
     xmax[tmp] = +1
-    
+
     return xmin, xmax
