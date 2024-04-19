@@ -101,7 +101,7 @@ def run_oneshot(model, recipe, dataset, output_dir):
         pad_to_max_length=pad_to_max_length,
     )
 
-def test_quantization_eval(input_seed):
+def test_quantization_params(input_seed):
     random.seed(input_seed)
     torch.manual_seed(input_seed)
     model_stub = "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T"
@@ -163,4 +163,4 @@ def test_quantization_eval(input_seed):
         if not o_zp == n_zp:
             print(f"input mismatch {name} {o_zp} {n_zp}")
 
-test_quantization_eval(input_seed=0)
+test_quantization_params(input_seed=0)

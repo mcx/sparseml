@@ -7,8 +7,8 @@ import torch
 import random
 from sparseml.pytorch.utils import tensors_to_device
 
-MODEL_PATH_OLD = "llama1.1b_old_quant_wo"
-MODEL_PATH_NEW = "llama1.1b_new_quant_wo"
+MODEL_PATH_OLD = "llama1.1b_old_quant"
+MODEL_PATH_NEW = "llama1.1b_new_quant"
 MAX_SEQ_LENGTH = 512
 DATASET_NAME = "open_platypus"
 NUM_COMPARISONS = 6
@@ -56,4 +56,4 @@ def main(seed=0):
         print(torch.exp(output_new.loss).item(), torch.exp(output_old.loss).item())
 
 if __name__ == "__main__":
-    main(seed=5678)
+    main(seed=42)
