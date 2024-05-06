@@ -185,6 +185,12 @@ class SparseGptWrapper(ModuleCompressionWrapper):
 
                         while q.ndim < 2:
                             q = q.unsqueeze(1)
+
+                        while q.ndim != 1:
+                            q = q.squeeze()
+
+                        # qq = q
+                        # breakpoint()
                         q = fake_quantize(
                             q,
                             scale[:, i],
@@ -193,8 +199,9 @@ class SparseGptWrapper(ModuleCompressionWrapper):
                         )
 
                 while q.ndim != 1:
-                    q.squeeze()
+                    q = q.squeeze()
 
+                qq = q
                 Q1[:, i] = q
                 Losses1[:, i] = (w - q) ** 2 / d**2
 
