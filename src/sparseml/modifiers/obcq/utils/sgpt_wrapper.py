@@ -14,6 +14,7 @@
 
 import time
 
+from compressed_tensors.quantization.quant_args import QuantizationStrategy
 from sparseml.modifiers.utils.compression_wrapper import ModuleCompressionWrapper
 
 
@@ -179,35 +180,45 @@ class SparseGptWrapper(ModuleCompressionWrapper):
                             fake_quantize,
                         )
 
-                        while scale.ndim < 2:
-                            scale = scale.unsqueeze(1)
-                            zero_point = zero_point.unsqueeze(1)
+                        if (
+                            self.layer.quantization_scheme.weights.strategy
+                            == QuantizationStrategy.TENSOR
+                        ):
+                            scale = scale.unsqueeze(0)
+                            zero_point = zero_point.unsqueeze(0)
+                            q = fake_quantize(
+                                q,
+                                scale,
+                                zero_point,
+                                self.layer.quantization_scheme.weights,
+                            )
+                        else:
+                            while scale.ndim < 2:
+                                scale = scale.unsqueeze(1)
+                                zero_point = zero_point.unsqueeze(1)
 
-                        while q.ndim < 2:
-                            q = q.unsqueeze(1)
+                            while q.ndim < 2:
+                                q = q.unsqueeze(1)
 
-                        while q.ndim != 1:
-                            q = q.squeeze()
-
-                        # qq = q
-                        # breakpoint()
-                        q = fake_quantize(
-                            q,
-                            scale[:, i],
-                            zero_point[:, i],
-                            self.layer.quantization_scheme.weights,
-                        )
+                            q = fake_quantize(
+                                q,
+                                scale[i, :],
+                                zero_point[i, :],
+                                self.layer.quantization_scheme.weights,
+                            )
 
                 while q.ndim != 1:
                     q = q.squeeze()
 
-                qq = q
                 Q1[:, i] = q
                 Losses1[:, i] = (w - q) ** 2 / d**2
 
                 err1 = (w - q) / d
                 W1[:, i:] -= err1.unsqueeze(1).matmul(Hinv1[i, i:].unsqueeze(0))
                 Err1[:, i] = err1
+
+                while q.ndim < 2:
+                    q = q.unsqueeze(1)
 
             W[:, i1:i2] = Q1
             Losses += torch.sum(Losses1, 1) / 2
