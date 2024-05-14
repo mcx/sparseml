@@ -65,15 +65,9 @@ from sparseml.pytorch.utils.logger import (
 from sparseml.pytorch.utils.model import load_model, model_to_device
 from sparsezoo import Model
 
-from torchvision.datasets import FGVCAircraft, DTD, Flowers102
-
 
 _LOGGER = logging.getLogger(__name__)
 
-
-DATASETS = {
-        "aircraft": {"torchvision_class": FGVCAircraft, "num_classes": 100}
-        }
 
 def create_grad_sampler_loader(
     train_dataset, num_workers=16, grad_sampler_batch_size=10
@@ -283,28 +277,23 @@ def _get_cache_path(filepath):
     return cache_path
 
 
-def load_data_from_class(data_class, traindir, valdir, args):
+def load_data_from_class(data_class, dset_path, train_split, val_split, args):
     # Data loading code
     _LOGGER.info("Loading data")
-    if len(args.train_resize_size) > 2:
-        raise ValueError("--train-resize-size must be of length 1 or 2")
-    if len(args.train_resize_size) == 1:
-        args.train_resize_size = args.train_resize_size[0]
-    if args.train_resize_size[0] == None:
-        args.train_resize_size = None
-    if len(args.val_resize_size) > 2:
-        raise ValueError("--val-resize-size must be of length 1 or 2")
-    if len(args.val_resize_size) == 1:
-        args.val_resize_size = args.val_resize_size[0]
-    if args.val_resize_size[0] == None:
-        args.val_resize_size = None
     val_resize_size, val_crop_size, train_resize_size, train_crop_size = (
         args.val_resize_size,
         args.val_crop_size,
         args.train_resize_size,
         args.train_crop_size,
     )
-    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%train_crop_size)", train_crop_size)
+    if len(args.train_resize_size) > 2:
+        raise ValueError("--train-resize-size must be of length 1 or 2")
+    if len(args.train_resize_size) == 1:
+        args.train_resize_size = args.train_resize_size[0]
+    if len(args.val_resize_size) > 2:
+        raise ValueError("--val-resize-size must be of length 1 or 2")
+    if len(args.val_resize_size) == 1:
+        args.val_resize_size = args.val_resize_size[0]
     interpolation = InterpolationMode(args.interpolation)
 
     _LOGGER.info("Loading training data")
@@ -319,10 +308,11 @@ def load_data_from_class(data_class, traindir, valdir, args):
         random_erase_prob = getattr(args, "random_erase", 0.0)
         ra_magnitude = args.ra_magnitude
         augmix_severity = args.augmix_severity
-        dataset = eval(args.torchvision_dataset)(
-            root=f"/tmp/{args.torchvision_dataset}",
-            split="trainval",
-            transform=presets.ClassificationPresetTrain(
+        dataset = data_class(
+            dset_path,
+            traindir,
+            train_split,
+            presets.ClassificationPresetTrain(
                 crop_size=train_crop_size,
                 resize_size=train_resize_size,
                 mean=args.rgb_mean,
@@ -333,7 +323,6 @@ def load_data_from_class(data_class, traindir, valdir, args):
                 ra_magnitude=ra_magnitude,
                 augmix_severity=augmix_severity,
             ),
-            download=True,
         )
         if args.cache_dataset:
             _LOGGER.info(f"Saving dataset_train to {cache_path}")
@@ -356,11 +345,9 @@ def load_data_from_class(data_class, traindir, valdir, args):
             interpolation=interpolation,
         )
 
-        dataset_test = eval(args.torchvision_dataset)(
-            root=f"/tmp/{args.torchvision_dataset}",
-            split="test",
-            transform=preprocessing,
-            download=True
+        dataset_test = torchvision.datasets.ImageFolder(
+            valdir,
+            preprocessing,
         )
         if args.cache_dataset:
             _LOGGER.info(f"Saving dataset_test to {cache_path}")
@@ -502,18 +489,15 @@ def main(args):
 
     train_dir = os.path.join(args.dataset_path, "train")
     val_dir = os.path.join(args.dataset_path, "val")
-    dataset, dataset_test, train_sampler, test_sampler = load_data_from_class(
-        "", train_dir, val_dir, args
+    dataset, dataset_test, train_sampler, test_sampler = load_data_from_dirs(
+        train_dir, val_dir, args
     )
     # dataset, dataset_test, train_sampler, test_sampler = load_data_from_class(
     #    data_class, train_split, val_split, args
     # )
 
     collate_fn = None
-    try:
-        num_classes = len(dataset.classes)
-    except:
-        num_classes = 102
+    num_classes = len(dataset.classes)
     mixup_transforms = []
     if args.mixup_alpha > 0.0:
         mixup_transforms.append(
@@ -1109,7 +1093,6 @@ def _deprecate_old_arguments(f):
     help="json parsable dict of recipe variable names to values to overwrite with",
 )
 @click.option("--dataset-path", required=True, type=str, help="dataset path")
-@click.option("--torchvision-dataset", required=False, type=str, help="Dataset to be loaded using torchvision class.")
 @click.option(
     "--arch-key",
     default=None,
