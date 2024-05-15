@@ -63,9 +63,7 @@ class CustomDataset(TextGenerationDataset):
                 desc="Applying custom func to the custom dataset",
             )
 
-        self.remove_columns = (
-            self.remove_columns or self.get_remove_columns_from_dataset(raw_dataset)
-        )
+        self.remove_columns = None
 
         if self.remove_columns is not None:
             raw_dataset = self.map(

@@ -154,3 +154,6 @@ class DataTrainingArguments(CustomDataTrainingArguments):
             ),
         },
     )
+    ignore_adding_default_labels: Optional[int] = field(
+        default=True,
+    )

@@ -52,7 +52,7 @@ class LogarithmicEqualizationModifier(SmoothQuantModifier):
         to smoothed) and the second entry is the layer whose output is scaled to
         achieve the smoothing.
         If regex is used, it matches layers with the largest overlap in module name.
-     :param ignore: list of layers to ignore, even if they match a regex in mappings.
+     :param  list of layers to ignore, even if they match a regex in mappings.
         It should match the name of layers whose outputs are scaled to achieve
         smoothing (the second entry of the mappings list).
      :param num_calibration_steps: number of samples to use for calibration, or None to

@@ -16,6 +16,4 @@ for i, sample in enumerate(dataset_test):
     pred_label = config.label2id[out.labels[0]]
     correct_labels += label == pred_label
     print(f"% of correct predictions: {(correct_labels/(i+1))*100}")
-    if i == 50:
-        break
     

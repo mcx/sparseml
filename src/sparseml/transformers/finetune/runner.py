@@ -163,6 +163,7 @@ class StageRunner:
         model_device = next(self.trainer.model.parameters()).device
         dummy_inp = tensors_to_device(dummy_inp, model_device)
         with torch.no_grad():
+            print(dummy_inp)
             self.trainer.model(**dummy_inp)
         self.trainer.accelerator.wait_for_everyone()
 
