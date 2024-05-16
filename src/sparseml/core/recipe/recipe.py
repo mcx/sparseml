@@ -152,6 +152,7 @@ class Recipe(RecipeBase):
                 )
                 _LOGGER.debug(f"Input string: {path_or_modifiers}")
                 obj = _load_json_or_yaml_string(path_or_modifiers)
+                breakpoint()
                 return Recipe.model_validate(obj)
         else:
             _LOGGER.info(f"Loading recipe from file {path_or_modifiers}")
@@ -486,12 +487,12 @@ class Recipe(RecipeBase):
                 assert isinstance(value, dict), f"stage must be a dict, given {value}"
                 value["group"] = key
                 stages.append(value)
-
-        for key, value in list(values.items()):
-            if key.endswith("_stage"):
-                remove_keys.append(key)
-                value["group"] = key.rsplit("_stage", 1)[0]
-                stages.append(value)
+        if isinstance(values, dict):
+            for key, value in list(values.items()):
+                if key.endswith("_stage"):
+                    remove_keys.append(key)
+                    value["group"] = key.rsplit("_stage", 1)[0]
+                    stages.append(value)
 
         for key in remove_keys:
             del values[key]

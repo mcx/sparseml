@@ -32,14 +32,20 @@ except ImportError as import_error:
 try:
     # This needs to be imported after lm_eval to ensure right transformers
     # version is installed for SparseML
-    from sparseml.transformers.utils.sparse_config import SparseAutoConfig
-    from sparseml.transformers.utils.sparse_model import SparseAutoModelForCausalLM
-    from sparseml.transformers.utils.sparse_tokenizer import SparseAutoTokenizer
+    # from sparseml.transformers.utils.sparse_config import SparseAutoConfig
+    # from sparseml.transformers.utils.sparse_model import SparseAutoModelForCausalLM
+    # from sparseml.transformers.utils.sparse_tokenizer import SparseAutoTokenizer
+    from sparseml.transformers import SparseAutoTokenizer
+    from sparseml.transformers.sparsification.sparse_config import SparseAutoConfig
+    from sparseml.transformers.sparsification.sparse_model import (
+        SparseAutoModelForCausalLM,
+    )
 except ImportError as import_error:
-    raise ImportError(
-        "Install sparseml supported dependencies for lm-eval integration by running "
-        "`pip uninstall transformers && pip install sparseml[transformers,torch]`"
-    ) from import_error
+    raise import_error
+    # raise ImportError(
+    #     "Install sparseml supported dependencies for lm-eval integration by running "
+    #     "`pip uninstall transformers && pip install sparseml[transformers,torch]`"
+    # ) from import_error
 
 __all__ = ["lm_eval_harness", "SparseMLLM"]
 _LOGGER = logging.getLogger(__name__)
@@ -104,13 +110,13 @@ def lm_eval_harness(
 
 class SparseMLLM(HFLM):
     """
-    SparseML is an open-source model optimization toolkit that enables you to create
-    inference-optimized sparse models using pruning, quantization, and distillation
-    algorithms. Models optimized with SparseML can then be exported to the ONNX and
-    deployed with DeepSparse for GPU-class performance on CPU hardware.
+    n toolkit that enables you to create
+        inference-optimized sparse models using pruning, quantization, and distillation
+        algorithms. Models optimized with SparseML can then be exported to the ONNX and
+        deployed with DeepSparse for GPU-class performance on CPU hardware.
 
-    This class is a wrapper around the HuggingFace LM class to enable SparseML
-    integration with the lm-evaluation-harness
+        This class is a wrapper around the HuggingFace LM class to enable SparseML
+        integration with the lm-evaluation-harness
     """
 
     def _create_model(

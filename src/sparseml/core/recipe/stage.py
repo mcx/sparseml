@@ -189,14 +189,15 @@ class RecipeStage(RecipeBase):
                 modifier["group"] = "default"
                 modifiers.append(modifier)
 
-        for key, value in list(values.items()):
-            if key.endswith("_modifiers"):
-                remove_keys.append(key)
-                group = key.rsplit("_modifiers", 1)[0]
-                for mod_key, mod_value in value.items():
-                    modifier = {mod_key: mod_value}
-                    modifier["group"] = group
-                    modifiers.append(modifier)
+        if isinstance(values, dict):
+            for key, value in list(values.items()):
+                if key.endswith("_modifiers"):
+                    remove_keys.append(key)
+                    group = key.rsplit("_modifiers", 1)[0]
+                    for mod_key, mod_value in value.items():
+                        modifier = {mod_key: mod_value}
+                        modifier["group"] = group
+                        modifiers.append(modifier)
 
         for key in remove_keys:
             del values[key]

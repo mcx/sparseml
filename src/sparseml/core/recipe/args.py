@@ -16,6 +16,8 @@ import math
 import re
 from typing import Any, Dict, Optional, Union
 
+from pydantic import ConfigDict
+
 
 __all__ = ["RecipeArgs"]
 
@@ -39,6 +41,8 @@ class RecipeArgs(Dict[str, Any]):
     >>> recipe_args.evaluate({"x": 3})
     {'a': 9.0, 'b': 2, 'c': 3}
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -206,7 +206,10 @@ class SparseGptWrapper(ModuleCompressionWrapper):
                             zero_point = zero_point[:, :, 0]
 
                             # get the group index for the current column
-                            input_dim_group = i // quant_scheme.weights.group_size
+                            column_idx = i1 + i
+                            input_dim_group = (
+                                column_idx // quant_scheme.weights.group_size
+                            )
 
                             # Since we're only applying quantization to a slice, this
                             # ends up being a channelwise application
